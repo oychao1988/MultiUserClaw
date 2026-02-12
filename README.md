@@ -70,7 +70,9 @@ rm ~/.nanobot/sessions/cli_direct.jsonl
 ### 截图
 
 ![chat.png](doc/chat.png)
-
+![chat2.png](doc/chat2.png)
+![cron_job.png](doc/cron_job.png)
+![cron_status.png](doc/cron_status.png)
 ---
 
 ## 2. 整体架构
