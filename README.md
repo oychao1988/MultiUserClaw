@@ -48,13 +48,13 @@
 ### 测试
 
 ```bash
-# 单条消息
+# 单条消息测试
 nanobot agent -m 'hello'
 
-# 交互式
+# 交互式测试
 nanobot agent
 
-# Web 界面（含 WebSocket 实时通信）
+# Web 后端正式启动（含 WebSocket 实时通信）
 nanobot web
 
 # 前端开发
