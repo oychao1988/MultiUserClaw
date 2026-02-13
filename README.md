@@ -787,3 +787,8 @@ nanobot/
 │
 └── bridge/                      # WhatsApp Node.js 桥接
 ```
+
+## 📬 联系方式
+
+如有问题，请联系作者：
+![weichat.png](doc/weichat.png)
