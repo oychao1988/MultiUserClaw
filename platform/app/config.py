@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     deepseek_api_key: str = ""
     openrouter_api_key: str = ""
+    dashscope_api_key: str = ""
+    aihubmix_api_key: str = ""
+    moonshot_api_key: str = ""
+    zhipu_api_key: str = ""
 
     # Default model for new users
     default_model: str = "claude-sonnet-4-5"

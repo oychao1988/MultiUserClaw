@@ -23,33 +23,47 @@ from app.db.models import Container, UsageRecord, User
 # ---------------------------------------------------------------------------
 
 _MODEL_PROVIDER_MAP: dict[str, tuple[str, str]] = {
-    # keyword in model name → (provider prefix for litellm, settings attr for api key)
+    # keyword in model name → (litellm prefix, settings attr for api key)
     "claude": ("", "anthropic_api_key"),
     "gpt": ("", "openai_api_key"),
     "deepseek": ("deepseek", "deepseek_api_key"),
     "o1": ("", "openai_api_key"),
     "o3": ("", "openai_api_key"),
     "o4": ("", "openai_api_key"),
+    "moonshot": ("", "moonshot_api_key"),
+    "glm": ("", "zhipu_api_key"),
+}
+
+# OpenAI-compatible providers that need a custom api_base
+_CUSTOM_BASE_PROVIDERS: dict[str, tuple[str, str]] = {
+    # keyword → (api_base, settings attr for api key)
+    "qwen": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "dashscope_api_key"),
+    "aihubmix": ("https://aihubmix.com/v1", "aihubmix_api_key"),
 }
 
 
-def _resolve_provider(model: str) -> tuple[str, str]:
-    """Return (litellm_model_name, api_key) for the given model.
-
-    Falls back to OpenRouter if configured, otherwise raises.
-    """
+def _resolve_provider(model: str) -> tuple[str, str, str | None]:
+    """Return (litellm_model_name, api_key, api_base_or_None) for the given model."""
     model_lower = model.lower()
 
+    # Check custom-base providers first (DashScope, AiHubMix, etc.)
+    for keyword, (api_base, key_attr) in _CUSTOM_BASE_PROVIDERS.items():
+        if keyword in model_lower:
+            api_key = getattr(settings, key_attr, "")
+            if api_key:
+                return f"openai/{model}", api_key, api_base
+
+    # Check standard providers
     for keyword, (prefix, key_attr) in _MODEL_PROVIDER_MAP.items():
         if keyword in model_lower:
             api_key = getattr(settings, key_attr, "")
             if api_key:
                 litellm_model = f"{prefix}/{model}" if prefix else model
-                return litellm_model, api_key
+                return litellm_model, api_key, None
 
     # Fallback: OpenRouter (routes any model)
     if settings.openrouter_api_key:
-        return f"openrouter/{model}", settings.openrouter_api_key
+        return f"openrouter/{model}", settings.openrouter_api_key, None
 
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -120,7 +134,7 @@ async def proxy_chat_completion(
     await _check_quota(db, user)
 
     # 3. Resolve provider
-    litellm_model, api_key = _resolve_provider(model)
+    litellm_model, api_key, api_base = _resolve_provider(model)
 
     # 4. Call LLM
     kwargs: dict = {
@@ -130,6 +144,8 @@ async def proxy_chat_completion(
         "temperature": temperature,
         "api_key": api_key,
     }
+    if api_base:
+        kwargs["api_base"] = api_base
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"

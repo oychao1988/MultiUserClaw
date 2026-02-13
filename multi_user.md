@@ -392,6 +392,31 @@
   - 即使用户在容器内执行 env、cat ~/.nanobot/config.json，也看不到任何 LLM API Key
 
 
+# 当前 LLM 代理架构
+
+  用户浏览器 → 前端 → gateway → 用户容器(nanobot)
+                                      ↓ (代理LLM请求)
+                                  gateway/llm/v1
+                                      ↓ (注入真实API Key)
+                                  实际 LLM 提供商
+
+  - 用户容器没有 API Key，通过 NANOBOT_PROXY__URL=http://gateway:8080/llm/v1 把 LLM 请求代理到 gateway
+  - Gateway 收到请求后：认证 → 检查配额 → 根据模型名找到对应的 API Key → 调用真实 LLM → 记录用量
+  - 问题：gateway 只支持 4 个提供商（anthropic/openai/deepseek/openrouter），而你实际用的是 DashScope，gateway 不认识这个提供商
+LLM 代理的完整流程：
+
+  用户选择模型 (如 dashscope/qwen3-coder-plus)
+      ↓
+  用户容器 → 发送LLM请求到 gateway (http://gateway:8080/llm/v1)
+      ↓
+  Gateway _resolve_provider():
+    - "qwen" 在模型名中 → 找到 DashScope 配置
+    - 注入 PLATFORM_DASHSCOPE_API_KEY
+    - 设置 api_base = https://dashscope.aliyuncs.com/compatible-mode/v1
+      ↓
+  Gateway → 调用真实 DashScope API → 返回结果 → 记录用量
+
+
 # 操作
 ## 创建nanobot的容器
 docker build -t nanobot:latest .
