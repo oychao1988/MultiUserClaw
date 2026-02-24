@@ -27,7 +27,8 @@ RUN uv pip install --system --no-cache .
 
 # Build the WhatsApp bridge
 WORKDIR /app/bridge
-RUN npm install && npm run build
+RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com/ && \
+    npm install && npm run build
 WORKDIR /app
 
 # Create config directory

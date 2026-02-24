@@ -4,10 +4,11 @@
 
 🔔：simple_web分支是简单的单用户的Web界面。如果单用户的页面测试使用，可以使用simple_web分支。
 🔔：nanobot010分支是nanobot的0.1.0版本
+🔔：当前的main分支是nanobot的0.1.4版本
 
 ---
 
-我只对原项目nanobot部分文件进行了修改，如果需要对nanobot进行更新，只需要保持这些文件不变即可。
+对原项目nanobot部分文件进行了修改，如果需要对nanobot进行更新，只需要保持这些文件不变即可。
   - 改造 nanobot/providers/litellm_provider.py：
     - 新增一个模式：当检测到环境变量 NANOBOT_LLM_PROXY_URL 时，所有 LLM 请求发往该 Proxy
     - 不需要 api_key，改用 X-Container-Token（一个一次性 token，仅用于标识容器身份，不含任何 LLM 密钥信息）
@@ -195,9 +196,9 @@ docker rm -f $(docker ps -a --filter "name=nanobot-user-" -q) 2>/dev/null
 
 ---
 
-## 2. 单用户本地运行
+## 2. 单用户本地运行(测试)
 
-适合个人使用，无需 Docker，直接在本机运行。
+适合个人使用或者测试，无需 Docker，直接在本机运行。
 
 ### 2.1 配置
 

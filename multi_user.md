@@ -422,6 +422,7 @@ LLM 代理的完整流程：
 docker build -t nanobot:latest .
 
 ## 启动gateway和web端，web端供用户访问，gateway给每个用户创建nanobot容器
+清空缓存容器，重建容器
 docker compose build --no-cache frontend && docker compose up -d 
 docker compose build --no-cache gateway && docker compose up -d
 删除gateway和用户容器，重建，防止缓存问题
@@ -435,3 +436,5 @@ docker ps -a --filter "name=nanobot-user-" --format "{{.Names}}" 2>&1
 docker rm -f nanobot-user-9abeea27 2>&1
 ### 清理 DB 中的旧记录
 docker exec nanobot-postgres-1 psql -U nanobot -d nanobot_platform -c "DELETE FROM containers;"
+### 删除用户创建的容器
+docker ps -a --filter "name=nanobot-user-" -q | xargs -r docker rm -f
