@@ -23,7 +23,9 @@
   - frontend前端页面进行显示
 
 UPDATE:
-- 支持plugins，多个Agent联合使用，更聪明，使用的是 ~/.nanobot/plugins/ or <workspace>/plugins/中的Plugins
+- 首次支持plugins，多个Agent联合使用，更聪明，使用的是 ~/.nanobot/plugins/ or <workspace>/plugins/中的Plugins
+- 支持文件管理，用户的文件上传和AI文件使用处理后下载
+- 前端的输入优化，支持VLLM模型
 
 ## 目录
 
