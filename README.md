@@ -17,13 +17,12 @@ http://117.133.60.219:3080/login
 
 ---
 
-  - 新增platform作为控制容器的网关，每个用户单独创建容器进行管理
-  - frontend前端页面进行显示
-
-UPDATE:
-- 首次支持plugins，多个Agent联合使用，更聪明，使用的是 ~/.nanobot/plugins/ or <workspace>/plugins/中的Plugins
-- 支持文件管理，用户的文件上传和AI文件使用处理后下载
-- 前端的输入优化，支持VLLM模型
+原理：
+  - 新增platform作为控制容器的网关，每个用户单独创建容器进行管理。
+  - frontend前端页面进行显示，调用platform进行交互, platform调用openclaw bridge对openclaw进行控制。
+  - openclaw目录就是官方的openclaw，新建了1个openclaw/bridge作为中间层，对openclaw的控制。
+  - 所以一共分有前端容器，platform容器，openclaw容器（包括bridge被platform控制，和控制openclaw）
+  - 如果要升级openclaw，只需要替换openclaw整个目录，注意保留bridge目录。
 
 ## 目录
 

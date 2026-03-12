@@ -2,8 +2,8 @@
 渠道管理--飞书设置---json模式
 {
   "enabled": true,
-  "appId": "cli_a92103e7f0789cbb",
-  "appSecret": "5my5N6usxEEw96UZvFI6NHHuLYFPd1DA",
+  "appId": "cli_axxxx",
+  "appSecret": "5myxxxxx",
   "connectionMode": "websocket",
   "domain": "feishu",
   "groupPolicy": "open",
