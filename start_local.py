@@ -8,7 +8,7 @@
   4. frontend dev server (端口 3080)
 
 用法:
-  # 启动所有服务
+  # 启动所有服务（默认局域网可访问）
   python start_local.py
 
   # 仅启动部分服务
@@ -267,10 +267,12 @@ def start_frontend() -> "subprocess.Popen | None":
         # shell=True + 字符串命令在两个平台都能正确找到 npm / npm.cmd
         subprocess.run("npm install", cwd=frontend_dir, shell=True, check=True)
 
+    # 让 vite 明确绑定到指定网卡，支持其他设备访问
+    dev_cmd = f"npm run dev -- --host {frontend_host} --port 3080"
     proc = subprocess.Popen(
-        "npm run dev",
+        dev_cmd,
         cwd=frontend_dir,
-        env=_base_env(VITE_API_URL="http://127.0.0.1:8080"),
+        env=_base_env(VITE_API_URL=api_url),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         shell=True,
@@ -373,6 +375,101 @@ def _stop_all_windows():
             pass
 
 
+# ── deploy_copy 同步 ─────────────────────────────────────────────────
+
+def sync_deploy_copy():
+    """将 deploy_copy 目录中的模板文件同步到 ~/.openclaw/。
+
+    仅在目标文件不存在时复制（不覆盖用户已有配置）。
+    openclaw_defaults.json 中的配置项会合并到 openclaw.json（不覆盖已有项）。
+    """
+    deploy_dir = os.path.join(PROJECT_DIR, "deploy_copy")
+    if not os.path.isdir(deploy_dir):
+        return
+
+    openclaw_home = os.path.join(os.path.expanduser("~"), ".openclaw")
+    log("同步 deploy_copy 模板文件...")
+
+    copied = 0
+
+    # 1. 同步 workspace/ 目录（AGENTS.md, SOUL.md, USER.md 等）
+    src_workspace = os.path.join(deploy_dir, "workspace")
+    dst_workspace = os.path.join(openclaw_home, "workspace")
+    if os.path.isdir(src_workspace):
+        os.makedirs(dst_workspace, exist_ok=True)
+        copied += _sync_dir(src_workspace, dst_workspace)
+
+    # 2. 同步 skills/ 目录
+    src_skills = os.path.join(deploy_dir, "skills")
+    dst_skills = os.path.join(openclaw_home, "skills")
+    if os.path.isdir(src_skills):
+        os.makedirs(dst_skills, exist_ok=True)
+        copied += _sync_dir(src_skills, dst_skills)
+
+    # 3. 合并 openclaw_defaults.json 到 openclaw.json
+    defaults_path = os.path.join(deploy_dir, "openclaw_defaults.json")
+    config_path = os.path.join(openclaw_home, "openclaw.json")
+    if os.path.isfile(defaults_path):
+        _merge_openclaw_defaults(defaults_path, config_path)
+
+    if copied > 0:
+        success(f"同步了 {copied} 个模板文件到 ~/.openclaw/")
+    else:
+        success("deploy_copy 模板已就绪（无新文件需同步）")
+
+
+def _sync_dir(src: str, dst: str) -> int:
+    """递归同步目录，仅复制目标不存在的文件。返回复制的文件数。"""
+    copied = 0
+    for root, dirs, files in os.walk(src):
+        rel = os.path.relpath(root, src)
+        dst_root = os.path.join(dst, rel) if rel != "." else dst
+        os.makedirs(dst_root, exist_ok=True)
+        for f in files:
+            src_file = os.path.join(root, f)
+            dst_file = os.path.join(dst_root, f)
+            if not os.path.exists(dst_file):
+                shutil.copy2(src_file, dst_file)
+                log(f"  + {os.path.relpath(dst_file, os.path.expanduser('~'))}")
+                copied += 1
+    return copied
+
+
+def _merge_openclaw_defaults(defaults_path: str, config_path: str):
+    """将 defaults 中的配置项浅合并到 openclaw.json（不覆盖已有顶层 key）。"""
+    try:
+        with open(defaults_path) as f:
+            defaults = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+
+    if not os.path.isfile(config_path):
+        return
+
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return
+
+    changed = False
+    for key, value in defaults.items():
+        if key not in config:
+            config[key] = value
+            changed = True
+        elif isinstance(value, dict) and isinstance(config[key], dict):
+            # 二级合并：仅添加不存在的子 key
+            for sub_key, sub_value in value.items():
+                if sub_key not in config[key]:
+                    config[key][sub_key] = sub_value
+                    changed = True
+
+    if changed:
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        log("  合并 openclaw_defaults.json → openclaw.json")
+
+
 # ── 主入口 ────────────────────────────────────────────────────────────
 
 def main():
@@ -381,6 +478,28 @@ def main():
     parser.add_argument("--only", type=str, help="仅启动指定服务，逗号分隔 (db,bridge,gateway,frontend)")
     parser.add_argument("--skip", type=str, help="跳过指定服务，逗号分隔")
     parser.add_argument("--no-tail", action="store_true", help="不跟踪日志输出")
+    parser.add_argument(
+        "--public",
+        action="store_true",
+        help="开启局域网访问（frontend 绑定 0.0.0.0，并自动使用本机 LAN IP 作为 API 地址）",
+    )
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="强制仅本机访问（frontend 绑定 127.0.0.1，API 使用 127.0.0.1）",
+    )
+    parser.add_argument(
+        "--frontend-host",
+        type=str,
+        default="",
+        help="前端 dev server 绑定地址（默认自动 0.0.0.0，可手动指定）",
+    )
+    parser.add_argument(
+        "--api-url",
+        type=str,
+        default="",
+        help="前端访问的 Gateway 地址（默认自动使用探测到的局域网 IP）",
+    )
     args = parser.parse_args()
 
     if args.stop:
@@ -396,6 +515,37 @@ def main():
 
     platform_label = "Windows" if IS_WINDOWS else ("macOS" if sys.platform == "darwin" else "Linux")
     print(f"\n{BOLD}🔧 OpenClaw 本地开发环境 ({platform_label}){RESET}\n")
+
+    # 同步 deploy_copy 模板文件到 ~/.openclaw/, 用于部署时初始化，方便新用户不必每次都安装
+    # sync_deploy_copy()
+    # print()
+
+    # ── 网络模式 ──────────────────────────────────────────────────────
+    lan_ip = _detect_lan_ip()
+
+    # 前端监听地址：手动指定 > local-only > 默认公网友好(0.0.0.0)
+    if args.frontend_host:
+        frontend_host = args.frontend_host
+    elif args.local_only:
+        frontend_host = "127.0.0.1"
+    else:
+        frontend_host = "0.0.0.0"
+
+    # 前端 API 地址：手动指定 > local-only > 默认使用探测 LAN IP
+    if args.api_url:
+        frontend_api_url = args.api_url.rstrip("/")
+    elif args.local_only:
+        frontend_api_url = "http://127.0.0.1:8080"
+    else:
+        frontend_api_url = f"http://{lan_ip}:8080"
+
+    # 启动前打印网络模式与 IP 探测结果，便于排障
+    log(f"探测到局域网 IP: {lan_ip}")
+    mode_label = "局域网可访问" if not args.local_only else "仅本机访问"
+    log(f"访问模式: {mode_label}")
+    if lan_ip == "127.0.0.1" and not args.local_only:
+        warn("未探测到有效局域网 IP，已回退到 127.0.0.1；如需外部访问请手动指定 --api-url")
+
     log(f"启动服务: {', '.join(enabled)}")
 
     processes: dict = {}
@@ -444,7 +594,7 @@ def main():
 
         # 4. Frontend
         if "frontend" in enabled:
-            proc = start_frontend()
+            proc = start_frontend(frontend_host=frontend_host, api_url=frontend_api_url)
             if proc:
                 processes["frontend"] = proc
 
@@ -453,6 +603,7 @@ def main():
             return
 
         # 打印访问信息
+        display_host = "127.0.0.1" if args.local_only else lan_ip
         print(f"\n{BOLD}{'=' * 52}{RESET}")
         print(f"{BOLD}  本地开发环境已启动{RESET}")
         print(f"{'=' * 52}")
@@ -464,7 +615,11 @@ def main():
                 pid_info = f"PID {processes[svc_id].pid}"
             else:
                 pid_info = "已有实例"
-            print(f"  {svc['color']}{svc['name']:>20}{RESET}  http://127.0.0.1:{svc['port']}  ({pid_info})")
+            print(f"  {svc['color']}{svc['name']:>20}{RESET}  http://{display_host}:{svc['port']}  ({pid_info})")
+        if "frontend" in enabled:
+            print(f"  {DIM}Frontend 绑定: {frontend_host} | VITE_API_URL={frontend_api_url}{RESET}")
+        if not args.local_only and lan_ip != "127.0.0.1":
+            print(f"  {DIM}局域网访问: http://{lan_ip}:3080{RESET}")
         print(f"{'=' * 52}")
         print(f"  {DIM}按 Ctrl+C 停止所有服务{RESET}\n")
 

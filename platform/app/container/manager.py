@@ -105,6 +105,10 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
                 "NANOBOT_PROXY__URL": f"http://gateway:8080/llm/v1",
                 "NANOBOT_PROXY__TOKEN": container_token,
                 "NANOBOT_AGENTS__DEFAULTS__MODEL": settings.default_model,
+                # Force-enable channel startup inside user containers.
+                # bridge/start.ts will skip injecting OPENCLAW_SKIP_CHANNELS=1
+                # when BRIDGE_ENABLE_CHANNELS is set to "1".
+                "BRIDGE_ENABLE_CHANNELS": "1",
             },
             mounts=[
                 docker.types.Mount("/root/.openclaw", data_vol, type="volume"),
