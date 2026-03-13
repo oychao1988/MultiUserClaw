@@ -32,6 +32,48 @@ async def _container_url(db: AsyncSession, user: User) -> str:
 
 
 # ---------------------------------------------------------------------------
+# SSE event stream (must be before the catch-all route)
+# ---------------------------------------------------------------------------
+
+@router.get("/events/stream")
+async def proxy_events_stream(
+    request: Request,
+    token: str = "",
+):
+    """SSE proxy for chat events — auth via query param since EventSource can't set headers."""
+    from app.auth.service import decode_token, get_user_by_id
+    from fastapi.responses import StreamingResponse
+
+    # Authenticate via query param token
+    payload = decode_token(token)
+    if payload is None or payload.get("type") != "access":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    async with async_session() as db:
+        user = await get_user_by_id(db, payload["sub"])
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User not found")
+        base_url = await _container_url(db, user)
+
+    target_url = f"{base_url}/api/events/stream"
+
+    async def _stream_sse():
+        async with httpx.AsyncClient(timeout=None) as client:
+            try:
+                async with client.stream("GET", target_url) as resp:
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+            except (httpx.ConnectError, httpx.RemoteProtocolError):
+                yield b"data: {\"error\":\"upstream disconnected\"}\n\n"
+
+    return StreamingResponse(
+        _stream_sse(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # HTTP reverse proxy  (catch-all for /api/openclaw/{path})
 # ---------------------------------------------------------------------------
 

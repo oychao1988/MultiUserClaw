@@ -1,5 +1,6 @@
 node_modules
 **/node_modules/
+bridge-deploy-copy/
 .env
 docker-compose.extra.yml
 dist
