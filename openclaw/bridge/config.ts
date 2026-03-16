@@ -102,6 +102,25 @@ export function writeOpenclawConfig(cfg: BridgeConfig): void {
       if (!existing.agents.defaults) existing.agents.defaults = {};
       existing.agents.defaults.model = openclawConfig.agents.defaults.model;
 
+      // --- agents.defaults.models: ensure platform-proxy model is in the allowlist ---
+      // If models map exists (whitelist mode), add our platform-proxy model so it's allowed.
+      // If models map is empty or absent, openclaw allows any model (allowAny mode).
+      const proxyModel = openclawConfig.agents.defaults.model; // e.g. "platform-proxy/kimi/kimi-k2.5"
+      if (existing.agents.defaults.models && typeof existing.agents.defaults.models === "object") {
+        if (!existing.agents.defaults.models[proxyModel]) {
+          existing.agents.defaults.models[proxyModel] = { alias: "Platform Proxy" };
+        }
+      }
+
+      // --- agents.list: rewrite per-agent model overrides to use platform-proxy ---
+      if (Array.isArray(existing.agents.list)) {
+        for (const agent of existing.agents.list) {
+          if (agent.model && !agent.model.startsWith("platform-proxy/")) {
+            agent.model = proxyModel;
+          }
+        }
+      }
+
       // --- gateway: always ensure auth.mode = "none" (bridge connects without token) ---
       if (!existing.gateway) existing.gateway = {};
       const gw = existing.gateway as Record<string, unknown>;

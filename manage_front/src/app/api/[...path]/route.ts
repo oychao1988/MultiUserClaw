@@ -5,7 +5,7 @@ const API_URL = process.env.API_URL || "http://localhost:8080";
 async function proxyRequest(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const targetPath = path.join("/");
-  const url = new URL(`/${targetPath}`, API_URL);
+  const url = new URL(`/api/${targetPath}`, API_URL);
 
   // Forward query string
   req.nextUrl.searchParams.forEach((value, key) => {
