@@ -526,6 +526,9 @@ cd frontend && npm run dev
 ![chat2.png](doc/chat2.png)
 ![管理界面.png](doc/%E7%AE%A1%E7%90%86%E7%95%8C%E9%9D%A2.png)
 
+一键修复用户的容器配置修改错误
+![一键容器修复.png](doc/%E4%B8%80%E9%94%AE%E5%AE%B9%E5%99%A8%E4%BF%AE%E5%A4%8D.png)
+
 ---
 
 ## 4. 整体架构

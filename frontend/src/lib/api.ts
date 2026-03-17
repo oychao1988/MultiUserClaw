@@ -377,6 +377,34 @@ export async function ping(): Promise<{ message: string }> {
 }
 
 // ---------------------------------------------------------------------------
+// Container Info & Maintenance
+// ---------------------------------------------------------------------------
+
+export interface ContainerInfo {
+  container_name: string | null
+  status: string
+  docker_id: string | null
+  created_at: string | null
+}
+
+export async function getContainerInfo(): Promise<ContainerInfo> {
+  return fetchJSON<ContainerInfo>('/api/openclaw/container/info')
+}
+
+export interface DoctorFixResult {
+  exit_code: number
+  stdout: string
+  stderr: string
+  restarted?: boolean
+}
+
+export async function runDoctorFix(): Promise<DoctorFixResult> {
+  return fetchJSON<DoctorFixResult>('/api/openclaw/container/doctor-fix', {
+    method: 'POST',
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Cron Jobs
 // ---------------------------------------------------------------------------
 

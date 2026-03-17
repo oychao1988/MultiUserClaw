@@ -403,6 +403,20 @@ async def ensure_running(db: AsyncSession, user_id: str) -> Container:
             c = client.containers.get(record.docker_id)
             if c.status != "running":
                 c.start()
+                c.reload()
+            # Sync internal IP — it may change after container restart
+            nets = c.attrs.get("NetworkSettings", {}).get("Networks", {})
+            for net_info in nets.values():
+                current_ip = net_info.get("IPAddress", "")
+                if current_ip and current_ip != record.internal_host:
+                    record.internal_host = current_ip
+                    await db.execute(
+                        update(Container)
+                        .where(Container.id == record.id)
+                        .values(internal_host=current_ip)
+                    )
+                    await db.commit()
+                break
         except DockerNotFound:
             await db.delete(record)
             await db.commit()

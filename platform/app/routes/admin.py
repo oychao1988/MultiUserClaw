@@ -55,7 +55,7 @@ async def list_users(
     page_size: int = 20,
     db: AsyncSession = Depends(get_db),
 ):
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Subquery: today's token usage per user
     usage_sub = (
@@ -192,7 +192,7 @@ async def usage_history(
     db: AsyncSession = Depends(get_db),
 ):
     """Usage history with daily and by-model aggregations."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.utcnow() - timedelta(days=days)
 
     # --- Daily aggregation ---
     daily_q = (

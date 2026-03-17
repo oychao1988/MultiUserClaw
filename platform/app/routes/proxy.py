@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import logging
 
+import docker
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.config import settings
-from app.container.manager import ensure_running
+from app.container.manager import ensure_running, get_container
 from app.db.engine import async_session, get_db
 from app.db.models import User
 
@@ -29,6 +30,187 @@ async def _container_url(db: AsyncSession, user: User) -> str:
         return settings.dev_openclaw_url
     container = await ensure_running(db, user.id)
     return f"http://{container.internal_host}:{container.internal_port}"
+
+
+# ---------------------------------------------------------------------------
+# Container info & maintenance (must be before the catch-all route)
+# ---------------------------------------------------------------------------
+
+@router.get("/container/info")
+async def container_info(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the user's container name and status for troubleshooting."""
+    container = await get_container(db, user.id)
+    if container is None:
+        return {"container_name": None, "status": "none", "docker_id": None}
+    short_id = user.id[:8]
+    container_name = f"openclaw-user-{short_id}"
+
+    # Get real Docker status (may differ from DB, e.g. restarting)
+    docker_status = container.status
+    try:
+        client = docker.from_env()
+        dc = client.containers.get(container.docker_id)
+        docker_status = dc.status  # "running", "restarting", "exited", etc.
+    except Exception:
+        pass
+
+    return {
+        "container_name": container_name,
+        "status": docker_status,
+        "docker_id": container.docker_id,
+        "created_at": container.created_at.isoformat() if container.created_at else None,
+    }
+
+
+def _sanitize_openclaw_config(config_json: str) -> tuple[str, list[str]]:
+    """Remove known invalid config entries that prevent openclaw from starting.
+
+    Returns (fixed_json, list_of_fixes_applied).
+    """
+    import json as _json
+
+    fixes: list[str] = []
+    try:
+        cfg = _json.loads(config_json)
+    except _json.JSONDecodeError:
+        return config_json, ["Config is not valid JSON — cannot auto-fix"]
+
+    # Fix: remove unknown channel ids (e.g. "web" which is not a valid channel)
+    known_channels = {"telegram", "discord", "slack", "signal", "imessage", "feishu", "qqbot", "whatsapp", "matrix", "msteams", "zalo"}
+    channels = cfg.get("channels", {})
+    bad_channels = [ch for ch in list(channels.keys()) if ch not in known_channels]
+    for ch in bad_channels:
+        del channels[ch]
+        fixes.append(f"Removed unknown channel: channels.{ch}")
+
+    # Fix: remove duplicate plugin entries that cause warnings
+    # (just a cleanup, not a blocker)
+
+    return _json.dumps(cfg, indent=2, ensure_ascii=False), fixes
+
+
+@router.post("/container/doctor-fix")
+async def container_doctor_fix(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fix the user's container config and restart.
+
+    Directly edits openclaw.json to remove known invalid entries, then runs
+    'openclaw doctor --fix', and restarts the container. Works even when the
+    container is in a restart loop.
+    """
+    container = await get_container(db, user.id)
+    if container is None:
+        raise HTTPException(status_code=404, detail="No container found")
+
+    short_id = user.id[:8]
+    volume_name = f"openclaw-data-{short_id}"
+
+    try:
+        client = docker.from_env()
+        dc = client.containers.get(container.docker_id)
+        docker_status = dc.status
+
+        # Step 1: Stop the container if it's misbehaving
+        need_external_fix = docker_status in ("restarting", "exited", "created")
+        if need_external_fix:
+            logger.info("Container %s is %s, stopping for repair", short_id, docker_status)
+            try:
+                dc.stop(timeout=5)
+            except Exception:
+                try:
+                    dc.kill()
+                except Exception:
+                    pass
+
+        # Step 2: Sanitize config via a lightweight helper container
+        # Read config
+        read_result = client.containers.run(
+            image="python:3.13-alpine",
+            command=["cat", "/data/openclaw.json"],
+            volumes={volume_name: {"bind": "/data", "mode": "ro"}},
+            remove=True,
+            detach=False,
+            stdout=True,
+            stderr=False,
+        )
+        config_content = read_result.decode("utf-8", errors="replace") if isinstance(read_result, bytes) else str(read_result)
+        fixed_content, fixes = _sanitize_openclaw_config(config_content)
+
+        if fixes:
+            # Write fixed config back
+            import base64
+            b64 = base64.b64encode(fixed_content.encode("utf-8")).decode("ascii")
+            client.containers.run(
+                image="python:3.13-alpine",
+                command=["sh", "-c", f"echo '{b64}' | base64 -d > /data/openclaw.json"],
+                volumes={volume_name: {"bind": "/data", "mode": "rw"}},
+                remove=True,
+                detach=False,
+            )
+            logger.info("Config sanitized for %s: %s", short_id, fixes)
+
+        # Step 3: Run openclaw doctor --fix
+        doctor_stdout = ""
+        if docker_status == "running" and not need_external_fix:
+            exit_code, output = dc.exec_run(
+                cmd=["node", "/app/openclaw.mjs", "doctor", "--fix"],
+                user="root",
+                demux=True,
+            )
+            doctor_stdout = (output[0] or b"").decode("utf-8", errors="replace")
+            doctor_stderr = (output[1] or b"").decode("utf-8", errors="replace")
+            if doctor_stderr:
+                doctor_stdout += "\n" + doctor_stderr
+        else:
+            # Run via helper container
+            try:
+                image = dc.image.id
+                result = client.containers.run(
+                    image=image,
+                    command=["node", "/app/openclaw.mjs", "doctor", "--fix"],
+                    volumes={volume_name: {"bind": "/root/.openclaw", "mode": "rw"}},
+                    user="root",
+                    remove=True,
+                    detach=False,
+                    stdout=True,
+                    stderr=True,
+                )
+                doctor_stdout = result.decode("utf-8", errors="replace") if isinstance(result, bytes) else str(result)
+            except Exception as e:
+                doctor_stdout = f"doctor --fix skipped: {e}"
+
+        # Step 4: Restart the container
+        dc.reload()
+        if dc.status != "running":
+            dc.start()
+        else:
+            dc.restart(timeout=10)
+
+        summary = "\n".join(f"- {f}" for f in fixes) if fixes else "No config issues found"
+        return {
+            "exit_code": 0,
+            "stdout": f"Config fixes:\n{summary}\n\nDoctor output:\n{doctor_stdout}",
+            "stderr": "",
+            "restarted": True,
+        }
+
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Docker container not found")
+    except Exception as e:
+        logger.error("doctor --fix failed for %s: %s", short_id, e, exc_info=True)
+        # Try to restart the container even if fix failed
+        try:
+            dc = client.containers.get(container.docker_id)
+            if dc.status != "running":
+                dc.start()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---------------------------------------------------------------------------

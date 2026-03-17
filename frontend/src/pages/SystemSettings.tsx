@@ -10,8 +10,12 @@ import {
   CheckCircle,
   X,
   RotateCcw,
+  Container,
+  Wrench,
+  Copy,
 } from 'lucide-react'
-import { getStatus, fetchJSON, restartGateway } from '../lib/api'
+import { getStatus, fetchJSON, restartGateway, getContainerInfo, runDoctorFix } from '../lib/api'
+import type { ContainerInfo, DoctorFixResult } from '../lib/api'
 
 interface OpenClawConfig {
   gateway?: {
@@ -35,6 +39,11 @@ export default function SystemSettings() {
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
+  // Container info
+  const [containerInfo, setContainerInfo] = useState<ContainerInfo | null>(null)
+  const [doctorRunning, setDoctorRunning] = useState(false)
+  const [doctorResult, setDoctorResult] = useState<DoctorFixResult | null>(null)
+
   // Editable fields
   const [gatewayBind, setGatewayBind] = useState('')
   const [gatewayPort, setGatewayPort] = useState('')
@@ -44,11 +53,13 @@ export default function SystemSettings() {
     setLoading(true)
     setError('')
     try {
-      const [statusData, configData] = await Promise.all([
-        getStatus(),
+      const [statusData, configData, containerData] = await Promise.all([
+        getStatus().catch(() => null),
         fetchJSON<{ config: OpenClawConfig }>('/api/openclaw/settings/config').catch(() => ({ config: null })),
+        getContainerInfo().catch(() => null),
       ])
       setStatus(statusData)
+      setContainerInfo(containerData)
       if (configData.config) {
         const cfg = configData.config
         setConfig(cfg)
@@ -196,6 +207,115 @@ export default function SystemSettings() {
               <span className="text-dark-text-secondary">当前模型</span>
               <span className="text-dark-text font-mono text-xs">{String(status?.model || '-')}</span>
             </div>
+          </div>
+        </section>
+
+        {/* Container Info */}
+        <section className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
+          <div className="px-5 py-3 border-b border-dark-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Container size={16} className="text-dark-text-secondary" />
+              <h2 className="text-sm font-semibold text-dark-text">容器信息</h2>
+            </div>
+            <button
+              onClick={async () => {
+                if (!confirm('确定要运行修复？这会自动修复配置问题并重启网关。')) return
+                setDoctorRunning(true)
+                setDoctorResult(null)
+                setError('')
+                try {
+                  const result = await runDoctorFix()
+                  setDoctorResult(result)
+                  if (result.exit_code === 0) {
+                    flash('修复完成，容器已自动重启')
+                    // Reload data after a short delay to reflect new status
+                    setTimeout(() => loadData(), 5000)
+                  } else {
+                    setError('修复命令返回非零退出码，请查看输出详情')
+                  }
+                } catch (err: any) {
+                  setError(err?.message || '修复失败')
+                } finally {
+                  setDoctorRunning(false)
+                }
+              }}
+              disabled={doctorRunning || !containerInfo?.container_name || containerInfo?.status === 'none'}
+              className="flex items-center gap-1.5 rounded-lg border border-dark-border px-3 py-1.5 text-xs text-dark-text-secondary hover:text-accent-blue hover:border-accent-blue transition-colors disabled:opacity-50"
+              title="运行 openclaw doctor --fix 修复配置问题"
+            >
+              <Wrench size={13} className={doctorRunning ? 'animate-spin' : ''} />
+              {doctorRunning ? '修复中...' : '一键修复'}
+            </button>
+          </div>
+          <div className="px-5 py-4">
+            {containerInfo?.container_name ? (
+              <div className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-2.5 text-sm">
+                <span className="text-dark-text-secondary">容器名称</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-dark-text font-mono text-xs">{containerInfo.container_name}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(containerInfo.container_name || '')
+                      flash('已复制容器名称')
+                    }}
+                    className="text-dark-text-secondary hover:text-dark-text transition-colors"
+                    title="复制容器名称"
+                  >
+                    <Copy size={12} />
+                  </button>
+                </span>
+
+                <span className="text-dark-text-secondary">容器状态</span>
+                <span className="flex items-center gap-1.5">
+                  <span className={`inline-block w-2 h-2 rounded-full ${
+                    containerInfo.status === 'running' ? 'bg-accent-green' :
+                    containerInfo.status === 'restarting' ? 'bg-accent-red animate-pulse' :
+                    containerInfo.status === 'creating' ? 'bg-accent-yellow' : 'bg-accent-red'
+                  }`} />
+                  <span className={
+                    containerInfo.status === 'running' ? 'text-accent-green' :
+                    containerInfo.status === 'restarting' ? 'text-accent-red' :
+                    containerInfo.status === 'creating' ? 'text-accent-yellow' : 'text-dark-text-secondary'
+                  }>
+                    {containerInfo.status === 'running' ? '运行中' :
+                     containerInfo.status === 'restarting' ? '异常重启中' :
+                     containerInfo.status === 'creating' ? '创建中' :
+                     containerInfo.status === 'paused' ? '已暂停' :
+                     containerInfo.status === 'exited' ? '已停止' :
+                     containerInfo.status === 'archived' ? '已归档' : containerInfo.status}
+                  </span>
+                </span>
+
+                <span className="text-dark-text-secondary">创建时间</span>
+                <span className="text-dark-text text-xs">
+                  {containerInfo.created_at ? new Date(containerInfo.created_at).toLocaleString('zh-CN') : '-'}
+                </span>
+              </div>
+            ) : (
+              <p className="text-sm text-dark-text-secondary">暂无容器</p>
+            )}
+
+            {doctorResult && (
+              <div className="mt-4 rounded-lg bg-dark-bg p-3 border border-dark-border">
+                <div className="flex items-center gap-2 mb-2">
+                  {doctorResult.exit_code === 0 ? (
+                    <CheckCircle size={14} className="text-accent-green" />
+                  ) : (
+                    <AlertCircle size={14} className="text-accent-red" />
+                  )}
+                  <span className="text-xs font-medium text-dark-text">
+                    修复结果 (exit code: {doctorResult.exit_code})
+                  </span>
+                </div>
+                <pre className="text-xs text-dark-text-secondary font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                  {doctorResult.stdout || doctorResult.stderr || '(无输出)'}
+                </pre>
+              </div>
+            )}
+
+            <p className="mt-3 text-[11px] text-dark-text-secondary">
+              遇到问题时，可将容器名称告知管理员协助排查。如果容器配置损坏导致无法启动，请点击「一键修复」。
+            </p>
           </div>
         </section>
 
