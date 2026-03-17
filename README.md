@@ -3,7 +3,9 @@
 基于Openclaw（其它分支有nanobot)改造的轻量级 AI 助手框架，支持多租户隔离部署、多平台渠道接入、工具调用、定时任务和 Web 实时通信。
 
 在线体验地址，可以直接注册一个账号即可使用，或者使用账号openclaw，密码:welcome，进行测试
+
 http://117.133.60.219:3080/login
+
 http://117.133.60.219:3081 管理端，可以查看容器的状态，amdin/welcome
 
 🔔：simple_web分支是简单的单用户的Web界面。如果单用户的页面测试使用，可以使用simple_web分支。
@@ -144,6 +146,13 @@ http://117.133.60.219:3081 管理端，可以查看容器的状态，amdin/welco
 
 管理自己的skills
 ![skill_page.png](doc/skill_page.png)
+
+![chat.png](doc/chat.png)
+![chat2.png](doc/chat2.png)
+![管理界面.png](doc/%E7%AE%A1%E7%90%86%E7%95%8C%E9%9D%A2.png)
+
+一键修复用户的容器配置修改错误
+![一键容器修复.png](doc/%E4%B8%80%E9%94%AE%E5%AE%B9%E5%99%A8%E4%BF%AE%E5%A4%8D.png)
 
 ## 1. 运行流程概览
 
@@ -520,14 +529,6 @@ python -m app.main
 cd frontend && npm run dev
 ```
 
-### 截图
-
-![chat.png](doc/chat.png)
-![chat2.png](doc/chat2.png)
-![管理界面.png](doc/%E7%AE%A1%E7%90%86%E7%95%8C%E9%9D%A2.png)
-
-一键修复用户的容器配置修改错误
-![一键容器修复.png](doc/%E4%B8%80%E9%94%AE%E5%AE%B9%E5%99%A8%E4%BF%AE%E5%A4%8D.png)
 
 ---
 
