@@ -287,6 +287,8 @@ async def proxy_chat_completion(
         "api_key": api_key,
         "stream": stream,
     }
+    if stream:
+        kwargs["stream_options"] = {"include_usage": True}
     # Some models (e.g. kimi-k2.5) only accept temperature=1; skip the param for them.
     model_base = model.split("/")[-1].lower()
     if model_base not in _FIXED_TEMPERATURE_MODELS:
@@ -314,13 +316,37 @@ async def proxy_chat_completion(
         import json
 
         async def _stream_generator():
+            total_input = 0
+            total_output = 0
             try:
                 async for chunk in response:
                     data = chunk.model_dump()
+                    # Extract usage from the final chunk if present
+                    chunk_usage = data.get("usage")
+                    if chunk_usage:
+                        total_input = chunk_usage.get("prompt_tokens") or 0
+                        total_output = chunk_usage.get("completion_tokens") or 0
                     yield f"data: {json.dumps(data)}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception:
                 yield "data: [DONE]\n\n"
+            finally:
+                # Record streaming usage
+                total = total_input + total_output
+                if user is not None and total > 0:
+                    try:
+                        record = UsageRecord(
+                            user_id=user.id,
+                            model=model,
+                            input_tokens=total_input,
+                            output_tokens=total_output,
+                            total_tokens=total,
+                        )
+                        db.add(record)
+                        await db.commit()
+                        logger.info("Streaming usage recorded: model=%s, total=%d", model, total)
+                    except Exception as e:
+                        logger.warning("Failed to record streaming usage: %s", e)
 
         return _stream_generator()
 

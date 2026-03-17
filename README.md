@@ -4,6 +4,7 @@
 
 在线体验地址，可以直接注册一个账号即可使用，或者使用账号openclaw，密码:welcome，进行测试
 http://117.133.60.219:3080/login
+http://117.133.60.219:3081 管理端，可以查看容器的状态，amdin/welcome
 
 🔔：simple_web分支是简单的单用户的Web界面。如果单用户的页面测试使用，可以使用simple_web分支。
 
@@ -523,6 +524,7 @@ cd frontend && npm run dev
 
 ![chat.png](doc/chat.png)
 ![chat2.png](doc/chat2.png)
+![管理界面.png](doc/%E7%AE%A1%E7%90%86%E7%95%8C%E9%9D%A2.png)
 
 ---
 
@@ -1042,7 +1044,11 @@ bridge、bridge-entrypoint.sh、bridge-package.json、bridge-deploy-copy、Docke
 5. 删除逐个确认 — 本地有但上游没有的文件，逐个询问是否删除
 6. dry-run 模式 — 用 --dry-run 只看差异不执行操作
 
-## 12. 如何配置Channel，打通QQ，飞书等
+# 12. 容器的内部端口5900浏览器端口和30000外部端口进行暴露，然后会被映射到主机的随机端口上
+browser_binding = _published_binding(docker_container, "5900/tcp")
+service_binding = _published_binding(docker_container, "30000/tcp")
+
+## 13. 如何配置Channel，打通QQ，飞书等
 https://zhuanlan.zhihu.com/p/2016049817437111235
 
 ## 📬 联系方式

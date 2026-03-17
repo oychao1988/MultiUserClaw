@@ -39,6 +39,10 @@ services:
       PLATFORM_DATABASE_URL: postgresql+asyncpg://nanobot:nanobot@postgres:5432/nanobot_platform
       PLATFORM_JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
 
+      # 启动时自动创建管理员账号
+      PLATFORM_ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      PLATFORM_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
       # LLM API Keys — ONLY here, never in user containers
       PLATFORM_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PLATFORM_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -80,6 +84,18 @@ services:
         VITE_API_URL: ${VITE_API_URL:-}
     ports:
       - "3080:3000"
+    networks:
+      - openclaw-external
+    depends_on:
+      - gateway
+
+  manage-front:
+    container_name: openclaw-manage
+    build: ./manage_front
+    ports:
+      - "3081:3000"
+    environment:
+      - API_URL=http://gateway:8080
     networks:
       - openclaw-external
     depends_on:
