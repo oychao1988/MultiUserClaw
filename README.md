@@ -1054,6 +1054,8 @@ bridge、bridge-entrypoint.sh、bridge-package.json、bridge-deploy-copy、Docke
 4. 文件分类 — 分为新增、更新、待删除三类，先打印摘要再执行
 5. 删除逐个确认 — 本地有但上游没有的文件，逐个询问是否删除
 6. dry-run 模式 — 用 --dry-run 只看差异不执行操作
+7. 列出容器所有卷 docker volume ls
+8. 删除某个用户的挂载数据 docker volume rm xxx, 实际挂载的是/root/.openclaw目录
 
 # 12. 容器的内部端口5900浏览器端口和30000外部端口进行暴露，然后会被映射到主机的随机端口上
 browser_binding = _published_binding(docker_container, "5900/tcp")
