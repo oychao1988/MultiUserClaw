@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { getAccessToken, getSession, listSessions, logout } from '../lib/api'
+import { getAccessToken, getSession, listSessions } from '../lib/api'
 
 export interface AppNotification {
   id: string
@@ -199,9 +199,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
 
     sse.onerror = () => {
-      if (sse.readyState === EventSource.CLOSED) {
-        logout()
-      }
+      // SSE connections can close during page refresh, navigation, or transient
+      // network issues — do NOT logout on error. The browser's EventSource will
+      // auto-reconnect when readyState is CONNECTING. If the token is truly
+      // invalid, the next API call will get a 401 and handle logout there.
     }
 
     return () => {
