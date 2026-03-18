@@ -1,8 +1,10 @@
 import { Bell, Settings, LogOut } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ping, logout } from '../lib/api'
 
 export default function TopBar() {
+  const navigate = useNavigate()
   const [online, setOnline] = useState(false)
 
   useEffect(() => {
@@ -34,7 +36,11 @@ export default function TopBar() {
             3
           </span>
         </button>
-        <button className="text-dark-text-secondary hover:text-dark-text">
+        <button
+          onClick={() => navigate('/settings')}
+          className="text-dark-text-secondary hover:text-dark-text transition-colors"
+          title="系统设置"
+        >
           <Settings size={20} />
         </button>
         <button
