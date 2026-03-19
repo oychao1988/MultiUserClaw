@@ -130,7 +130,12 @@ export function skillsRoutes(config: BridgeConfig, client: BridgeGatewayClient):
   // DELETE /api/skills/:name
   router.delete("/skills/:name", asyncHandler(async (req, res) => {
     const name = req.params.name;
-    const skillDir = path.join(workspaceSkillsDir, name);
+
+    // Check global skills dir first, then workspace
+    let skillDir = path.join(globalSkillsDir, name);
+    if (!fs.existsSync(skillDir)) {
+      skillDir = path.join(workspaceSkillsDir, name);
+    }
 
     if (!fs.existsSync(skillDir)) {
       // Check if it's a builtin skill
@@ -151,8 +156,11 @@ export function skillsRoutes(config: BridgeConfig, client: BridgeGatewayClient):
   router.get("/skills/:name/download", asyncHandler(async (req, res) => {
     const name = req.params.name;
 
-    // Check workspace first, then builtin
-    let skillDir = path.join(workspaceSkillsDir, name);
+    // Check global first, then workspace, then builtin
+    let skillDir = path.join(globalSkillsDir, name);
+    if (!fs.existsSync(skillDir)) {
+      skillDir = path.join(workspaceSkillsDir, name);
+    }
     if (!fs.existsSync(skillDir)) {
       skillDir = path.join(builtinSkillsDir, name);
     }
@@ -218,9 +226,9 @@ export function skillsRoutes(config: BridgeConfig, client: BridgeGatewayClient):
         return;
       }
 
-      // Move to workspace skills dir
-      const destDir = path.join(workspaceSkillsDir, skillName);
-      fs.mkdirSync(workspaceSkillsDir, { recursive: true });
+      // Move to global skills dir (discoverable by all agents)
+      const destDir = path.join(globalSkillsDir, skillName);
+      fs.mkdirSync(globalSkillsDir, { recursive: true });
       if (fs.existsSync(destDir)) {
         fs.rmSync(destDir, { recursive: true });
       }
@@ -236,7 +244,7 @@ export function skillsRoutes(config: BridgeConfig, client: BridgeGatewayClient):
       res.json({
         name: skillName,
         description,
-        source: "workspace",
+        source: "global",
         available: true,
         path: path.join(destDir, "SKILL.md"),
       });
