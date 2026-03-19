@@ -10,7 +10,12 @@ mkdir -p "$OPENCLAW_HOME/sessions"
 mkdir -p "$OPENCLAW_HOME/skills"
 mkdir -p "$OPENCLAW_HOME/agents"
 
-# Sync deploy templates (only copy files that don't already exist)
+#如果不存在默认openclaw.json文件，初始化1个空的
+if [ ! -f "$OPENCLAW_HOME/openclaw.json" ]; then
+  echo "{}" > "$OPENCLAW_HOME/openclaw.json"
+  echo "[entrypoint] Initialized $OPENCLAW_HOME/openclaw.json"
+fi
+# 同步需要预先拷贝的配置，skills和agents到容器
 if [ -d /deploy-copy ]; then
   echo "[entrypoint] Syncing deploy templates..."
 

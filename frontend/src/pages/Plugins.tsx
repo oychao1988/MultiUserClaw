@@ -26,6 +26,7 @@ const EXTENSION_CATALOG = [
   { spec: '@openclaw/nostr', name: 'nostr', label: 'Nostr', description: 'Nostr 去中心化协议接入', icon: '🟣' },
   { spec: '@openclaw/voice-call', name: 'voice-call', label: 'Voice Call', description: '语音通话接入', icon: '📞' },
   { spec: '@tencent-connect/openclaw-qqbot', name: 'qqbot', label: 'QQ Bot', description: 'QQ 机器人接入', icon: '🐧' },
+  { spec: '@wecom/wecom-openclaw-plugin', name: 'wecom-openclaw-plugin', label: '企业微信 / WeCom', description: '企业微信 AI Bot WebSocket 持久连接接入', icon: '💼' },
 ]
 
 export default function Plugins() {

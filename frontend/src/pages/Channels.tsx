@@ -47,6 +47,7 @@ const CHANNEL_CATALOG: Array<{ id: string; label: string; description: string; i
   { id: 'synology-chat', label: 'Synology Chat', description: '通过 Synology Chat Bot 接入', icon: '🟢' },
   { id: 'zalo', label: 'Zalo', description: '通过 Zalo OA API 接入', icon: '🔵' },
   { id: 'qqbot', label: 'QQ', description: '通过 QQ 机器人接入（需安装 QQBot 插件）', icon: '🐧' },
+  { id: 'wecom', label: '企业微信', description: '通过企业微信 AI Bot WebSocket 接入（需安装 WeCom 插件）', icon: '💼' },
 ]
 
 const CHANNEL_ICONS: Record<string, string> = Object.fromEntries(
@@ -294,6 +295,17 @@ const CHANNEL_CONFIG_FIELDS: Record<string, ChannelField[]> = {
     { key: 'clientSecret', label: 'Client Secret', type: 'password', required: true, hint: 'QQ 开放平台的机器人密钥' },
     { key: 'enabled', label: '启用', type: 'boolean' },
     { key: 'allowFrom', label: '允许的用户', type: 'text', hint: '逗号分隔的用户 ID，* 表示所有人' },
+  ],
+  wecom: [
+    { key: 'botId', label: 'Bot ID', type: 'text', required: true, hint: '企业微信 AI Bot 的 Bot ID' },
+    { key: 'secret', label: 'Bot Secret', type: 'password', required: true, hint: '企业微信 AI Bot 的 Secret' },
+    { key: 'enabled', label: '启用', type: 'boolean' },
+    { key: 'websocketUrl', label: 'WebSocket 地址', type: 'text', hint: '默认 wss://openws.work.weixin.qq.com' },
+    { key: 'dmPolicy', label: '私聊策略', type: 'select', options: DM_POLICY_OPTIONS, hint: '控制谁可以私聊 Bot' },
+    { key: 'allowFrom', label: '允许的用户', type: 'text', hint: '逗号分隔的企业微信用户 ID' },
+    { key: 'groupPolicy', label: '群聊策略', type: 'select', options: GROUP_POLICY_OPTIONS },
+    { key: 'groupAllowFrom', label: '允许的群组', type: 'text', hint: '逗号分隔的群组 ID' },
+    { key: 'sendThinkingMessage', label: '发送思考中提示', type: 'boolean', hint: '回复前显示"正在思考"占位消息' },
   ],
 }
 
