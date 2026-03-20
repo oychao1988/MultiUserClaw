@@ -94,6 +94,7 @@
 - Slack
 - iMessage
 - 其他扩展渠道
+- 配置文档： https://my.feishu.cn/wiki/KfTlwurh7ix0PHkQmHic2L0Snue
 
 ### 🔑 API 访问
 - API Token 生成和管理
