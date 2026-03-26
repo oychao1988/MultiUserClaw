@@ -235,21 +235,27 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
     except DockerNotFound:
         pass
 
+    # Fetch user's SSO token if available (e.g. InfoX-Med)
+    # user_result = await db.execute(select(User).where(User.id == user_id))
+    # user_row = user_result.scalar_one_or_none()
+    # sso_token = user_row.sso_token if user_row else None
+
+    container_env = {
+        "NANOBOT_PROXY__URL": f"http://gateway:8080/llm/v1",
+        "NANOBOT_PROXY__TOKEN": container_token,
+        "NANOBOT_AGENTS__DEFAULTS__MODEL": settings.default_model,
+        "TZ": settings.container_tz,
+        "BRIDGE_ENABLE_CHANNELS": "1",
+    }
+    # if sso_token:
+    #     container_env["SSO_TOKEN"] = sso_token
+
     run_kwargs = {
         "image": settings.openclaw_image,
-        "command": ["node", "bridge/dist/start.js"],
+        "command": ["node", "bridge/dist/bridge/start.js"],
         "name": container_name,
         "detach": True,
-        "environment": {
-            "NANOBOT_PROXY__URL": f"http://gateway:8080/llm/v1",
-            "NANOBOT_PROXY__TOKEN": container_token,
-            "NANOBOT_AGENTS__DEFAULTS__MODEL": settings.default_model,
-            "TZ": settings.container_tz,
-            # Force-enable channel startup inside user containers.
-            # bridge/start.ts will skip injecting OPENCLAW_SKIP_CHANNELS=1
-            # when BRIDGE_ENABLE_CHANNELS is set to "1".
-            "BRIDGE_ENABLE_CHANNELS": "1",
-        },
+        "environment": container_env,
         "mounts": [
             docker.types.Mount("/root/.openclaw", data_vol, type="volume"),
         ],
