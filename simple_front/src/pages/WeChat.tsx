@@ -69,17 +69,17 @@ export default function WeChat() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-6 border-b border-dark-border shrink-0">
+      <div className="p-6 border-b border-light-border shrink-0">
         <div className="flex items-center justify-between max-w-3xl mx-auto">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-green/10 text-2xl">
               🟩
             </div>
             <div>
-              <h1 className="text-xl font-bold text-dark-text">微信渠道</h1>
+              <h1 className="text-xl font-bold text-light-text">微信渠道</h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className={`inline-block h-2 w-2 rounded-full ${isConnected ? 'bg-accent-green' : 'bg-gray-500'}`} />
-                <span className="text-sm text-dark-text-secondary">
+                <span className="text-sm text-light-text-secondary">
                   {isConnected ? '已连接' : '未连接'}
                 </span>
               </div>
@@ -90,7 +90,7 @@ export default function WeChat() {
               setStatus('loading')
               fetchChannelStatus().then(() => setStatus('idle'))
             }}
-            className="flex items-center gap-1.5 rounded-lg border border-dark-border px-3 py-1.5 text-xs text-dark-text-secondary hover:text-dark-text transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-light-border px-3 py-1.5 text-xs text-light-text-secondary hover:text-light-text transition-colors"
           >
             <RefreshCw size={14} />
             刷新状态
@@ -116,20 +116,20 @@ export default function WeChat() {
           {isConnected ? (
             <div className="text-center">
               <div className="text-4xl mb-3">✅</div>
-              <p className="text-dark-text font-medium">微信渠道已连接</p>
-              <p className="text-sm text-dark-text-secondary mt-1">可以通过微信与 AI Agent 对话</p>
+              <p className="text-light-text font-medium">微信渠道已连接</p>
+              <p className="text-sm text-light-text-secondary mt-1">可以通过微信与 AI Agent 对话</p>
               <button
                 onClick={() => setStatus('binding')}
-                className="mt-4 rounded-lg border border-dark-border px-4 py-2 text-sm text-dark-text-secondary hover:text-dark-text transition-colors"
+                className="mt-4 rounded-lg border border-light-border px-4 py-2 text-sm text-light-text-secondary hover:text-light-text transition-colors"
               >
                 重新扫码绑定
               </button>
             </div>
           ) : (
             <div className="text-center">
-              <Smartphone size={48} className="mx-auto mb-3 text-dark-text-secondary opacity-30" />
-              <p className="text-dark-text font-medium">微信渠道未连接</p>
-              <p className="text-sm text-dark-text-secondary mt-1">点击下方按钮扫码绑定微信</p>
+              <Smartphone size={48} className="mx-auto mb-3 text-light-text-secondary opacity-30" />
+              <p className="text-light-text font-medium">微信渠道未连接</p>
+              <p className="text-sm text-light-text-secondary mt-1">点击下方按钮扫码绑定微信</p>
               <button
                 onClick={() => {
                   setError('')
@@ -272,18 +272,18 @@ function WeixinBindPanel({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="px-6 py-3 border-b border-dark-border bg-dark-bg/40 shrink-0">
+      <div className="px-6 py-3 border-b border-light-border bg-light-bg/40 shrink-0">
         <div className="max-w-3xl mx-auto">
           <div className="flex flex-wrap items-center gap-3 text-xs">
-            <span className={`inline-flex items-center gap-1 ${connected ? 'text-accent-green' : 'text-dark-text-secondary'}`}>
+            <span className={`inline-flex items-center gap-1 ${connected ? 'text-accent-green' : 'text-light-text-secondary'}`}>
               <span className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-accent-green' : 'bg-gray-500'}`} />
               {connected ? '终端已连接' : '终端未连接'}
             </span>
-            <span className={`inline-flex items-center gap-1 ${running ? 'text-accent-yellow' : 'text-dark-text-secondary'}`}>
+            <span className={`inline-flex items-center gap-1 ${running ? 'text-accent-yellow' : 'text-light-text-secondary'}`}>
               <PlugZap size={12} />
               {running ? '扫码流程进行中' : '等待重新发起'}
             </span>
-            <span className={`inline-flex items-center gap-1 ${pluginReady ? 'text-accent-green' : 'text-dark-text-secondary'}`}>
+            <span className={`inline-flex items-center gap-1 ${pluginReady ? 'text-accent-green' : 'text-light-text-secondary'}`}>
               <span className={`inline-block h-2 w-2 rounded-full ${pluginReady ? 'bg-accent-green' : 'bg-gray-500'}`} />
               {pluginReady ? '微信插件已就绪' : '检查微信插件中'}
             </span>
@@ -312,7 +312,7 @@ function WeixinBindPanel({ onDone }: { onDone: () => void }) {
         {output || '正在连接微信绑定终端...'}
       </div>
 
-      <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-dark-border shrink-0">
+      <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-light-border shrink-0">
         <button
           onClick={() => {
             try { ws?.close() } catch { /* ignore */ }
@@ -320,13 +320,13 @@ function WeixinBindPanel({ onDone }: { onDone: () => void }) {
             setError('')
             setAttempt((value) => value + 1)
           }}
-          className="rounded-lg border border-dark-border px-4 py-1.5 text-sm text-dark-text-secondary hover:text-dark-text transition-colors"
+          className="rounded-lg border border-light-border px-4 py-1.5 text-sm text-light-text-secondary hover:text-light-text transition-colors"
         >
           重新生成二维码
         </button>
         <button
           onClick={() => setOutput('')}
-          className="rounded-lg border border-dark-border px-4 py-1.5 text-sm text-dark-text-secondary hover:text-dark-text transition-colors"
+          className="rounded-lg border border-light-border px-4 py-1.5 text-sm text-light-text-secondary hover:text-light-text transition-colors"
         >
           清空输出
         </button>
