@@ -307,7 +307,7 @@ function WeixinBindPanel({ onDone }: { onDone: () => void }) {
 
       <div
         ref={outputRef}
-        className="flex-1 overflow-auto whitespace-pre-wrap bg-black px-6 py-4 font-mono text-xs leading-relaxed text-green-200"
+        className="flex-1 overflow-auto whitespace-pre-wrap bg-black px-5 py-4 font-mono text-xs leading-none text-green-200"
       >
         {output || '正在连接微信绑定终端...'}
       </div>
