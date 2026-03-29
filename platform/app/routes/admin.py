@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+import docker
+from docker.errors import NotFound as DockerNotFound
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import cast, Date, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import require_admin
 from app.auth.service import hash_password
-from app.container.manager import destroy_container, pause_container
+from app.container.manager import destroy_container, pause_container, resume_container
 from app.db.engine import get_db
 from app.db.models import AuditLog, Container, UsageRecord, User
 
@@ -46,6 +48,51 @@ class UpdateUserRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: str
+
+
+async def _sync_container_status(db: AsyncSession, docker_id: str, db_status: str | None) -> str | None:
+    """Sync container status from Docker API to database.
+    
+    Returns the real status from Docker, or None if container doesn't exist.
+    """
+    if not docker_id:
+        return db_status
+    
+    try:
+        client = docker.from_env()
+        container = client.containers.get(docker_id)
+        real_status = container.status  # running, exited, paused, created, etc.
+        
+        # Map Docker status to our DB status
+        if real_status == "running":
+            new_status = "running"
+        elif real_status == "paused":
+            new_status = "paused"
+        elif real_status in ("exited", "dead", "removing"):
+            new_status = "stopped"
+        else:
+            new_status = db_status  # keep DB status for other states like "creating"
+        
+        # Update DB if different
+        if new_status != db_status:
+            await db.execute(
+                update(Container)
+                .where(Container.docker_id == docker_id)
+                .values(status=new_status)
+            )
+        
+        return new_status
+    except DockerNotFound:
+        # Container was deleted externally, mark as stopped
+        if db_status != "stopped":
+            await db.execute(
+                update(Container)
+                .where(Container.docker_id == docker_id)
+                .values(status="stopped")
+            )
+        return "stopped"
+    except Exception:
+        return db_status
 
 
 @router.get("/users", response_model=PaginatedUsers)
@@ -157,11 +204,64 @@ async def delete_user_container(user_id: str, db: AsyncSession = Depends(get_db)
     raise HTTPException(status_code=404, detail="Container not found")
 
 
+@router.post("/containers/sync")
+async def sync_all_container_statuses(db: AsyncSession = Depends(get_db)):
+    """Sync all container statuses from Docker to database.
+    
+    Returns the count of updated containers.
+    """
+    result = await db.execute(
+        select(Container.id, Container.user_id, Container.docker_id, Container.status)
+    )
+    containers = result.all()
+    
+    if not containers:
+        return {"updated": 0, "message": "No containers found"}
+    
+    updated_count = 0
+    for container in containers:
+        if container.docker_id:
+            real_status = await _sync_container_status(db, container.docker_id, container.status)
+            if real_status != container.status:
+                updated_count += 1
+    
+    await db.commit()
+    
+    return {"updated": updated_count, "message": f"Synced {updated_count} containers"}
+
+
+@router.post("/users/{user_id}/container/sync")
+async def sync_single_container_status(user_id: str, db: AsyncSession = Depends(get_db)):
+    """Sync a single user's container status from Docker to database."""
+    result = await db.execute(
+        select(Container).where(Container.user_id == user_id)
+    )
+    container = result.scalar_one_or_none()
+    
+    if container is None:
+        raise HTTPException(status_code=404, detail="Container not found")
+    
+    if not container.docker_id:
+        raise HTTPException(status_code=400, detail="No docker_id for this container")
+    
+    real_status = await _sync_container_status(db, container.docker_id, container.status)
+    await db.commit()
+    
+    return {"status": real_status, "docker_id": container.docker_id}
+
+
 @router.post("/users/{user_id}/container/pause")
 async def pause_user_container(user_id: str, db: AsyncSession = Depends(get_db)):
     if await pause_container(db, user_id):
         return {"ok": True}
     raise HTTPException(status_code=404, detail="Container not running")
+
+
+@router.post("/users/{user_id}/container/resume")
+async def resume_user_container(user_id: str, db: AsyncSession = Depends(get_db)):
+    if await resume_container(db, user_id):
+        return {"ok": True}
+    raise HTTPException(status_code=404, detail="Container not found or cannot be resumed")
 
 
 @router.get("/usage/summary")
@@ -174,14 +274,24 @@ async def usage_summary(db: AsyncSession = Depends(get_db)):
         )
     )).scalar_one()
     total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
-    active_containers = (await db.execute(
+    
+    # Get containers with real running status from Docker
+    try:
+        client = docker.from_env()
+        all_containers = client.containers.list(all=True)
+        real_running = sum(1 for c in all_containers if c.status == "running")
+    except Exception:
+        real_running = 0
+    
+    # Fallback to DB status if Docker query fails
+    db_active = (await db.execute(
         select(func.count(Container.id)).where(Container.status == "running")
     )).scalar_one()
 
     return {
         "total_tokens_today": total_today,
         "total_users": total_users,
-        "active_containers": active_containers,
+        "active_containers": real_running or db_active,
     }
 
 

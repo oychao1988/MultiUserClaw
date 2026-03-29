@@ -90,8 +90,20 @@ export async function pauseContainer(userId: string) {
   return request(`/api/admin/users/${userId}/container/pause`, { method: "POST" });
 }
 
+export async function resumeContainer(userId: string) {
+  return request(`/api/admin/users/${userId}/container/resume`, { method: "POST" });
+}
+
 export async function destroyContainer(userId: string) {
   return request(`/api/admin/users/${userId}/container`, { method: "DELETE" });
+}
+
+export async function syncAllContainerStatuses(): Promise<{ updated: number; message: string }> {
+  return request(`/api/admin/containers/sync`, { method: "POST" });
+}
+
+export async function syncContainerStatus(userId: string): Promise<{ status: string; docker_id: string }> {
+  return request(`/api/admin/users/${userId}/container/sync`, { method: "POST" });
 }
 
 // Usage

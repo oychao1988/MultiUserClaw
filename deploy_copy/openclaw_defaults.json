@@ -125,7 +125,12 @@
   "browser": {
     "enabled": true,
     "executablePath": "/usr/bin/chromium",
-    "noSandbox": true
+    "noSandbox": true,
+    "extraArgs": [
+    "--disable-dev-shm-usage",
+    "--disable-dbus",
+    "--ozone-platform=headless"
+    ]
   },
 
   "plugins": {

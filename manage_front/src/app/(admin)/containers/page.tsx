@@ -9,15 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { getUsers, pauseContainer, destroyContainer } from "@/lib/api";
+import { getUsers, pauseContainer, resumeContainer, destroyContainer, syncAllContainerStatuses } from "@/lib/api";
 import type { UserSummary, PaginatedUsers } from "@/types";
 import { toast } from "sonner";
 
 export default function ContainersPage() {
   const [data, setData] = useState<PaginatedUsers | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [page, setPage] = useState(1);
-  const [confirmAction, setConfirmAction] = useState<{ user: UserSummary; type: "pause" | "destroy" } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ user: UserSummary; type: "pause" | "resume" | "destroy" } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -36,6 +37,9 @@ export default function ContainersPage() {
       if (confirmAction.type === "pause") {
         await pauseContainer(confirmAction.user.id);
         toast.success("容器已暂停");
+      } else if (confirmAction.type === "resume") {
+        await resumeContainer(confirmAction.user.id);
+        toast.success("容器已恢复");
       } else {
         await destroyContainer(confirmAction.user.id);
         toast.success("容器已销毁");
@@ -47,11 +51,25 @@ export default function ContainersPage() {
     }
   }
 
-  const statusVariant = (s: string | null): "default" | "secondary" | "outline" => {
+  const statusVariant = (s: string | null): "default" | "secondary" | "destructive" | "outline" => {
     switch (s) {
       case "running": return "default";
       case "paused": return "secondary";
+      case "stopped": return "destructive";
       default: return "outline";
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncAllContainerStatuses();
+      toast.success(result.message);
+      fetchData();
+    } catch (err) {
+      toast.error("同步失败", { description: err instanceof Error ? err.message : "" });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -59,7 +77,16 @@ export default function ContainersPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">容器管理</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold">容器管理</h2>
+        <Button 
+          variant="outline" 
+          onClick={handleSync} 
+          disabled={syncing}
+        >
+          {syncing ? "同步中..." : "刷新状态"}
+        </Button>
+      </div>
 
       {loading ? (
         <p className="text-gray-500">加载中...</p>
@@ -93,22 +120,33 @@ export default function ContainersPage() {
                     {user.container_created_at ? new Date(user.container_created_at).toLocaleString() : "-"}
                   </TableCell>
                   <TableCell className="space-x-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={user.container_status !== "running"}
-                      onClick={() => setConfirmAction({ user, type: "pause" })}
-                    >
-                      暂停
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={!user.container_status}
-                      onClick={() => setConfirmAction({ user, type: "destroy" })}
-                    >
-                      销毁
-                    </Button>
+                    {user.container_status === "running" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setConfirmAction({ user, type: "pause" })}
+                      >
+                        暂停
+                      </Button>
+                    )}
+                    {(user.container_status === "paused" || user.container_status === "stopped") && (
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => setConfirmAction({ user, type: "resume" })}
+                      >
+                        恢复
+                      </Button>
+                    )}
+                    {user.container_status && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setConfirmAction({ user, type: "destroy" })}
+                      >
+                        销毁
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -131,11 +169,11 @@ export default function ContainersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              确认{confirmAction?.type === "pause" ? "暂停" : "销毁"}容器
+              确认{confirmAction?.type === "pause" ? "暂停" : confirmAction?.type === "resume" ? "恢复" : "销毁"}容器
             </DialogTitle>
           </DialogHeader>
           <p>
-            确定要{confirmAction?.type === "pause" ? "暂停" : "销毁"}用户
+            确定要{confirmAction?.type === "pause" ? "暂停" : confirmAction?.type === "resume" ? "恢复" : "销毁"}用户
             <strong> {confirmAction?.user.username} </strong>
             的容器吗？
             {confirmAction?.type === "destroy" && (

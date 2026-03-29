@@ -457,6 +457,35 @@ async def pause_container(db: AsyncSession, user_id: str) -> bool:
         return False
 
 
+async def resume_container(db: AsyncSession, user_id: str) -> bool:
+    """Resume a paused or stopped container to running state."""
+    record = await get_container(db, user_id)
+    if record is None:
+        return False
+
+    if record.status == "running":
+        return True  # Already running
+
+    client = _docker()
+    try:
+        c = client.containers.get(record.docker_id)
+        
+        if record.status == "paused":
+            c.unpause()
+        elif record.status == "stopped":
+            c.start()
+        
+        # Reload to get latest status
+        c.reload()
+        await db.execute(
+            update(Container).where(Container.id == record.id).values(status="running")
+        )
+        await db.commit()
+        return True
+    except DockerNotFound:
+        return False
+
+
 async def destroy_container(db: AsyncSession, user_id: str) -> bool:
     """Stop and remove a user's container (data volumes are preserved)."""
     record = await get_container(db, user_id)
