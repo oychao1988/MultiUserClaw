@@ -6,7 +6,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 
 # Install dependencies
-RUN uv pip install --system --no-cache -r pyproject.toml
+RUN uv pip install --system --no-cache -r pyproject.toml --default-index https://pypi.tuna.tsinghua.edu.cn/simple
 
 # Copy application code
 COPY app/ app/
