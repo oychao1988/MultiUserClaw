@@ -72,21 +72,22 @@ def is_custom(rel_path: str) -> bool:
     top = rel_path.split("/")[0]
     return top in CUSTOM_FILES or rel_path in CUSTOM_FILES
 
+# 构建产物目录，遍历时直接跳过（避免 Windows 长路径报错）
+SKIP_DIRS = {"node_modules", "dist", "dist-runtime", ".turbo", ".cache"}
 
 def collect_files(root: Path, gitignore_patterns: list[str]) -> dict[str, Path]:
-    """收集目录下所有文件（排除 .gitignore 匹配项和 .git）"""
+    """收集目录下所有文件（排除 .gitignore 匹配项、.git 和构建产物目录）"""
     files = {}
-    for path in root.rglob("*"):
-        if path.is_dir():
-            continue
-        rel = str(path.relative_to(root))
-        if rel.startswith(".git/") or rel == ".git":
-            continue
-        if is_ignored(rel, gitignore_patterns):
-            continue
-        files[rel] = path
+    for dirpath, dirnames, filenames in os.walk(root):
+        # 跳过 .git 和构建产物目录（原地修改 dirnames 阻止递归进入）
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and d != ".git"]
+        for fname in filenames:
+            full = Path(dirpath) / fname
+            rel = str(full.relative_to(root)).replace("\\", "/")
+            if is_ignored(rel, gitignore_patterns):
+                continue
+            files[rel] = full
     return files
-
 
 def check_git_clean(project_dir: Path) -> bool:
     """检查工作目录是否有未提交的更改"""
@@ -100,14 +101,12 @@ def check_git_clean(project_dir: Path) -> bool:
     except Exception:
         return True  # 如果不是 git 仓库，跳过检查
 
-
 def files_are_identical(file1: Path, file2: Path) -> bool:
     """比较两个文件内容是否相同"""
     try:
         return file1.read_bytes() == file2.read_bytes()
     except Exception:
         return False
-
 
 def confirm(prompt: str) -> bool:
     """请求用户确认"""
@@ -119,7 +118,6 @@ def confirm(prompt: str) -> bool:
         if answer in ("n", "no"):
             return False
 
-
 def main():
     parser = argparse.ArgumentParser(description="升级 OpenClaw 到最新版本")
     parser.add_argument(
@@ -130,6 +128,11 @@ def main():
         "--dry-run",
         action="store_true",
         help="仅预览变更，不执行实际操作"
+    )
+    parser.add_argument(
+        "--use-gitignore",
+        action="store_true",
+        help="使用 .gitignore 规则过滤文件（默认不使用，会同步所有文件）"
     )
     args = parser.parse_args()
 
@@ -174,7 +177,14 @@ def main():
     # ========== 收集文件 ==========
     print("\n正在分析文件差异...\n")
 
-    gitignore_patterns = load_gitignore_patterns(project_dir)
+    # 默认不使用 .gitignore，只有当 --use-gitignore 参数指定时才使用
+    if args.use_gitignore:
+        print("ℹ️  已启用 --use-gitignore，将使用 .gitignore 规则过滤文件\n")
+        gitignore_patterns = load_gitignore_patterns(project_dir)
+    else:
+        print("ℹ️  默认模式：忽略 .gitignore 规则，将同步所有文件（包括 pnpm-lock.yaml 等）\n")
+        gitignore_patterns = []
+
     upstream_files = collect_files(upstream_dir, gitignore_patterns)
     local_files = collect_files(project_dir, gitignore_patterns)
 
@@ -290,7 +300,6 @@ def main():
     print("    3. 测试功能是否正常")
     print("    4. git add && git commit 提交升级")
     print()
-
 
 if __name__ == "__main__":
     main()

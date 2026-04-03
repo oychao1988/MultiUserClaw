@@ -26,6 +26,9 @@ const hoisted = vi.hoisted(() => {
   const resolveSandboxContextMock = vi.fn();
   const subscribeEmbeddedPiSessionMock = vi.fn();
   const acquireSessionWriteLockMock = vi.fn();
+  const installToolResultContextGuardMock = vi.fn(() => () => {});
+  const flushPendingToolResultsAfterIdleMock = vi.fn(async () => {});
+  const releaseWsSessionMock = vi.fn(() => {});
   const resolveBootstrapContextForRunMock = vi.fn<() => Promise<BootstrapContext>>(async () => ({
     bootstrapFiles: [],
     contextFiles: [],
@@ -47,6 +50,9 @@ const hoisted = vi.hoisted(() => {
     resolveSandboxContextMock,
     subscribeEmbeddedPiSessionMock,
     acquireSessionWriteLockMock,
+    installToolResultContextGuardMock,
+    flushPendingToolResultsAfterIdleMock,
+    releaseWsSessionMock,
     resolveBootstrapContextForRunMock,
     getGlobalHookRunnerMock,
     initializeGlobalHookRunnerMock,
@@ -151,6 +157,7 @@ vi.mock("../google.js", () => ({
   logToolSchemasForGoogle: () => {},
   sanitizeSessionHistory: async ({ messages }: { messages: unknown[] }) => messages,
   sanitizeToolsForGoogle: ({ tools }: { tools: unknown[] }) => tools,
+  validateReplayTurns: async ({ messages }: { messages: unknown[] }) => messages,
 }));
 
 vi.mock("../../session-file-repair.js", () => ({
@@ -167,16 +174,19 @@ vi.mock("../session-manager-init.js", () => ({
 }));
 
 vi.mock("../../session-write-lock.js", () => ({
-  acquireSessionWriteLock: (...args: unknown[]) => hoisted.acquireSessionWriteLockMock(...args),
+  acquireSessionWriteLock: (...args: unknown[]) =>
+    hoisted.acquireSessionWriteLockMock.apply(undefined, args),
   resolveSessionLockMaxHoldFromTimeout: () => 1,
 }));
 
 vi.mock("../tool-result-context-guard.js", () => ({
-  installToolResultContextGuard: () => () => {},
+  installToolResultContextGuard: (...args: unknown[]) =>
+    (hoisted.installToolResultContextGuardMock as (...args: unknown[]) => unknown)(...args),
 }));
 
 vi.mock("../wait-for-idle-before-flush.js", () => ({
-  flushPendingToolResultsAfterIdle: async () => {},
+  flushPendingToolResultsAfterIdle: (...args: unknown[]) =>
+    (hoisted.flushPendingToolResultsAfterIdleMock as (...args: unknown[]) => unknown)(...args),
 }));
 
 vi.mock("../runs.js", () => ({
@@ -209,12 +219,16 @@ vi.mock("../system-prompt.js", () => ({
 }));
 
 vi.mock("../extra-params.js", () => ({
-  applyExtraParamsToAgent: () => {},
+  applyExtraParamsToAgent: () => ({
+    effectiveExtraParams: {},
+  }),
+  resolveAgentTransportOverride: () => undefined,
 }));
 
 vi.mock("../../openai-ws-stream.js", () => ({
   createOpenAIWebSocketStreamFn: vi.fn(),
-  releaseWsSession: () => {},
+  releaseWsSession: (...args: unknown[]) =>
+    (hoisted.releaseWsSessionMock as (...args: unknown[]) => unknown)(...args),
 }));
 
 vi.mock("../../anthropic-payload-log.js", () => ({
@@ -251,6 +265,8 @@ vi.mock("../../pi-tools.js", () => ({
 
 vi.mock("../../pi-bundle-mcp-tools.js", () => ({
   createBundleMcpToolRuntime: async () => undefined,
+  getOrCreateSessionMcpRuntime: async () => undefined,
+  materializeBundleMcpToolsForRun: async () => undefined,
 }));
 
 vi.mock("../../pi-bundle-lsp-runtime.js", () => ({
@@ -283,8 +299,8 @@ vi.mock("../../model-tool-support.js", () => ({
   supportsModelTools: () => true,
 }));
 
-vi.mock("../../ollama-stream.js", () => ({
-  createConfiguredOllamaStreamFn: vi.fn(),
+vi.mock("../../provider-stream.js", () => ({
+  registerProviderStreamForModel: vi.fn(),
 }));
 
 vi.mock("../../owner-display.js", () => ({
@@ -425,7 +441,7 @@ let runEmbeddedAttemptPromise:
   | Promise<typeof import("./attempt.js").runEmbeddedAttempt>
   | undefined;
 
-export async function loadRunEmbeddedAttempt() {
+async function loadRunEmbeddedAttempt() {
   runEmbeddedAttemptPromise ??= import("./attempt.js").then((mod) => mod.runEmbeddedAttempt);
   return await runEmbeddedAttemptPromise;
 }
@@ -481,9 +497,15 @@ export function resetEmbeddedAttemptHarness(
   hoisted.createAgentSessionMock.mockReset();
   hoisted.sessionManagerOpenMock.mockReset().mockReturnValue(hoisted.sessionManager);
   hoisted.resolveSandboxContextMock.mockReset();
+  hoisted.subscribeEmbeddedPiSessionMock
+    .mockReset()
+    .mockImplementation(() => createSubscriptionMock());
   hoisted.acquireSessionWriteLockMock.mockReset().mockResolvedValue({
     release: async () => {},
   });
+  hoisted.installToolResultContextGuardMock.mockReset().mockReturnValue(() => {});
+  hoisted.flushPendingToolResultsAfterIdleMock.mockReset().mockResolvedValue(undefined);
+  hoisted.releaseWsSessionMock.mockReset().mockReturnValue(undefined);
   hoisted.resolveBootstrapContextForRunMock.mockReset().mockResolvedValue({
     bootstrapFiles: [],
     contextFiles: [],
@@ -498,7 +520,7 @@ export function resetEmbeddedAttemptHarness(
     .mockReturnValue({ messages: params.sessionMessages ?? [] });
   hoisted.sessionManager.appendCustomEntry.mockReset();
   if (params.subscribeImpl) {
-    hoisted.subscribeEmbeddedPiSessionMock.mockReset().mockImplementation(params.subscribeImpl);
+    hoisted.subscribeEmbeddedPiSessionMock.mockImplementation(params.subscribeImpl);
   }
 }
 
@@ -636,6 +658,7 @@ export async function createContextEngineAttemptRunner(params: {
     }) => Promise<CompactResult>;
     info?: Partial<ContextEngineInfo>;
   };
+  attemptOverrides?: Partial<Parameters<Awaited<ReturnType<typeof loadRunEmbeddedAttempt>>>[0]>;
   sessionKey: string;
   tempPaths: string[];
 }) {
@@ -712,5 +735,6 @@ export async function createContextEngineAttemptRunner(params: {
         version: infoVersion,
       },
     },
+    ...params.attemptOverrides,
   });
 }

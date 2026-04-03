@@ -95,6 +95,7 @@ export default function Chat() {
   const [chatLoading, setChatLoading] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [agentRunning, setAgentRunning] = useState(false)
   const [error, setError] = useState('')
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   // Typewriter streaming: targetText is the full text from SSE, displayedText is what's shown
@@ -233,6 +234,7 @@ export default function Chat() {
     activeSessionKeyRef.current = key
     setChatLoading(true)
     setError('')
+    setAgentRunning(false)
     setPendingFiles([])
     setSearchParams({ session: key })
     try {
@@ -466,6 +468,7 @@ export default function Chat() {
     // Started — clear streaming text for new turn
     if (state === 'started') {
       setStreamingText('')
+      setAgentRunning(true)
       return
     }
 
@@ -481,11 +484,13 @@ export default function Chat() {
           setMessages(detail.messages || [])
           setStreamingText('')
           setSending(false)
+          setAgentRunning(false)
           sseCompletedRef.current = true
           fetchSessions()
         }).catch(() => {
           setStreamingText('')
           setSending(false)
+          setAgentRunning(false)
           sseCompletedRef.current = true
         })
       }, 3000)
@@ -818,13 +823,21 @@ export default function Chat() {
                   {activeSessionKey.split(':').pop()}
                 </span>
               </div>
-              <button
-                onClick={handleRefresh}
-                className="text-dark-text-secondary hover:text-dark-text transition-colors"
-                title="刷新"
-              >
-                <RefreshCw size={14} />
-              </button>
+              <div className="flex items-center gap-2">
+                {(sending || agentRunning) && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent-blue/10 border border-accent-blue/20 animate-pulse">
+                    <Loader2 size={12} className="animate-spin text-accent-blue" />
+                    <span className="text-[11px] text-accent-blue font-medium">处理中</span>
+                  </div>
+                )}
+                <button
+                  onClick={handleRefresh}
+                  className="text-dark-text-secondary hover:text-dark-text transition-colors"
+                  title="刷新"
+                >
+                  <RefreshCw size={14} />
+                </button>
+              </div>
             </div>
 
             {/* Messages */}

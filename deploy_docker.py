@@ -24,8 +24,8 @@
   python deploy_docker.py --restart
 
   # 重建指定服务（逗号分隔，openclaw 表示基础镜像）
-  python deploy_docker.py --rebuild openclaw,gateway,frontend,manage-front,simple-front --host 192.168.1.160
-  python deploy_docker.py --rebuild gateway --host 117.133.60.219
+  python deploy_docker.py --rebuild openclaw,gateway,frontend,manage-front,simple-front
+  python deploy_docker.py --rebuild gateway
   python deploy_docker.py --rebuild frontend
 
   # 完全清理重建
@@ -126,7 +126,7 @@ def check_env_file():
         warn("建议创建 .env 文件并配置至少一个 LLM API Key")
         return
 
-    with open(env_path) as f:
+    with open(env_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     key_vars = [

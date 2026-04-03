@@ -334,3 +334,29 @@ export async function getChannelsStatus(probe = false): Promise<ChannelsStatusRe
 export async function listPlugins(): Promise<PluginInfo[]> {
   return fetchJSON<PluginInfo[]>('/api/openclaw/plugins')
 }
+
+// ---------------------------------------------------------------------------
+// File upload
+// ---------------------------------------------------------------------------
+
+export async function uploadFileToWorkspace(
+  file: File,
+  uploadDir: string,
+): Promise<{ path: string }> {
+  const token = getAccessToken()
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('upload_dir', uploadDir)
+
+  const res = await fetch(`${API_URL}/api/openclaw/files/upload`, {
+    method: 'POST',
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+    body: formData,
+  })
+
+  if (!res.ok) {
+    throw new Error(await parseErrorMessage(res))
+  }
+
+  return res.json() as Promise<{ path: string }>
+}

@@ -31,9 +31,20 @@ RUN apt-get update && \
         chromium \
         chromium-driver \
         ffmpeg \
+        fonts-noto-cjk \
+        fonts-noto-color-emoji \
+        fontconfig \
+        locales \
     && \
+    sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen zh_CN.UTF-8 && \
+    fc-cache -fv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# 6) Set locale so Chromium picks up CJK fonts correctly
+ENV LANG=zh_CN.UTF-8
+ENV LC_ALL=zh_CN.UTF-8
 
 # 4.5) Git: rewrite SSH URLs to HTTPS (Docker has no SSH keys)
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
@@ -57,6 +68,7 @@ COPY ui/ ./ui/
 COPY bridge/ ./bridge/
 COPY packages/ ./packages/
 COPY extensions/ ./extensions/
+COPY scripts/postinstall-bundled-plugins.mjs scripts/npm-runner.mjs ./scripts/
 RUN npm install -g pnpm && \
     pnpm config set registry https://registry.npmmirror.com && \
     pnpm config set fetch-retries 5 && \

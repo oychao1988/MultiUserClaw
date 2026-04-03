@@ -268,6 +268,70 @@ async def proxy_events_stream(
 
 
 # ---------------------------------------------------------------------------
+# File proxy (supports token as query param for <img> tags)
+# Covers both /filemanager/download and /filemanager/serve
+# ---------------------------------------------------------------------------
+
+async def _proxy_file_request(request: Request, token: str, bridge_path: str):
+    """Shared helper: authenticate via query-param or header, then proxy to bridge."""
+    from app.auth.service import decode_token, get_user_by_id
+    from fastapi.responses import Response
+
+    # Try query-param token first, fall back to Authorization header
+    user = None
+    if token:
+        payload = decode_token(token)
+        if payload and payload.get("type") == "access":
+            async with async_session() as db:
+                user = await get_user_by_id(db, payload["sub"])
+    if not user:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            payload = decode_token(auth_header[7:])
+            if payload and payload.get("type") == "access":
+                async with async_session() as db:
+                    user = await get_user_by_id(db, payload["sub"])
+
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    async with async_session() as db:
+        base_url = await _container_url(db, user)
+
+    target_url = f"{base_url}/api/{bridge_path}"
+    if request.query_params:
+        target_url += f"?{request.query_params}"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.request(method="GET", url=target_url)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Container not ready",
+            )
+
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        media_type=resp.headers.get("content-type", "application/octet-stream"),
+        headers={k: v for k, v in resp.headers.items() if k.lower() in ("content-disposition",)},
+    )
+
+
+@router.get("/filemanager/download")
+async def proxy_file_download(request: Request, token: str = ""):
+    """Proxy file download — supports query-param token for <img> tags."""
+    return await _proxy_file_request(request, token, "filemanager/download")
+
+
+@router.get("/filemanager/serve")
+async def proxy_file_serve(request: Request, token: str = ""):
+    """Proxy file serve — supports query-param token for <img> tags."""
+    return await _proxy_file_request(request, token, "filemanager/serve")
+
+
+# ---------------------------------------------------------------------------
 # HTTP reverse proxy  (catch-all for /api/openclaw/{path})
 # ---------------------------------------------------------------------------
 

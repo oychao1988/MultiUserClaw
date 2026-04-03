@@ -12,7 +12,6 @@ import {
 } from "../../config/config.js";
 import { hasConfiguredSecretInput } from "../../config/types.secrets.js";
 import { resolveGatewayAuth } from "../../gateway/auth.js";
-import { startGatewayServer } from "../../gateway/server.js";
 import type { GatewayWsLogStyle } from "../../gateway/ws-logging.js";
 import { setGatewayWsLogStyle } from "../../gateway/ws-logging.js";
 import { setVerbose } from "../../globals.js";
@@ -26,6 +25,7 @@ import { defaultRuntime } from "../../runtime.js";
 import { formatCliCommand } from "../command-format.js";
 import { inheritOptionFromParent } from "../command-options.js";
 import { forceFreePortAndWait, waitForPortBindable } from "../ports.js";
+import { withProgress } from "../progress.js";
 import { ensureDevGatewayConfig } from "./dev.js";
 import { runGatewayLoop } from "./run-loop.js";
 import {
@@ -48,6 +48,7 @@ type GatewayRunOpts = {
   allowUnconfigured?: boolean;
   force?: boolean;
   verbose?: boolean;
+  cliBackendLogs?: boolean;
   claudeCliLogs?: boolean;
   wsLog?: unknown;
   compact?: boolean;
@@ -78,6 +79,7 @@ const GATEWAY_RUN_BOOLEAN_KEYS = [
   "reset",
   "force",
   "verbose",
+  "cliBackendLogs",
   "claudeCliLogs",
   "compact",
   "rawStream",
@@ -139,6 +141,36 @@ function formatModeErrorList<T extends string>(modes: readonly T[]): string {
   return `${quoted.slice(0, -1).join(", ")}, or ${quoted[quoted.length - 1]}`;
 }
 
+function getGatewayStartGuardErrors(params: {
+  allowUnconfigured?: boolean;
+  configExists: boolean;
+  configAuditPath: string;
+  mode: string | undefined;
+}): string[] {
+  if (params.allowUnconfigured || params.mode === "local") {
+    return [];
+  }
+  if (!params.configExists) {
+    return [
+      `Missing config. Run \`${formatCliCommand("openclaw setup")}\` or set gateway.mode=local (or pass --allow-unconfigured).`,
+    ];
+  }
+  if (params.mode === undefined) {
+    return [
+      [
+        "Gateway start blocked: existing config is missing gateway.mode.",
+        "Treat this as suspicious or clobbered config.",
+        `Re-run \`${formatCliCommand("openclaw onboard --mode local")}\` or \`${formatCliCommand("openclaw setup")}\`, set gateway.mode=local manually, or pass --allow-unconfigured.`,
+      ].join(" "),
+      `Config write audit: ${params.configAuditPath}`,
+    ];
+  }
+  return [
+    `Gateway start blocked: set gateway.mode=local (current: ${params.mode}) or pass --allow-unconfigured.`,
+    `Config write audit: ${params.configAuditPath}`,
+  ];
+}
+
 function resolveGatewayRunOptions(opts: GatewayRunOpts, command?: Command): GatewayRunOpts {
   const resolved: GatewayRunOpts = { ...opts };
 
@@ -160,6 +192,23 @@ function resolveGatewayRunOptions(opts: GatewayRunOpts, command?: Command): Gate
   return resolved;
 }
 
+function isGatewayLockError(err: unknown): err is GatewayLockError {
+  return (
+    err instanceof GatewayLockError ||
+    (!!err && typeof err === "object" && (err as { name?: string }).name === "GatewayLockError")
+  );
+}
+
+function isHealthyGatewayLockError(err: unknown): boolean {
+  if (!isGatewayLockError(err) || typeof err.message !== "string") {
+    return false;
+  }
+  return (
+    err.message.includes("gateway already running") ||
+    err.message.includes("another gateway instance is already listening")
+  );
+}
+
 async function runGatewayCommand(opts: GatewayRunOpts) {
   const isDevProfile = process.env.OPENCLAW_PROFILE?.trim().toLowerCase() === "dev";
   const devMode = Boolean(opts.dev) || isDevProfile;
@@ -169,11 +218,10 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
     return;
   }
 
-  setConsoleTimestampPrefix(true);
   setVerbose(Boolean(opts.verbose));
-  if (opts.claudeCliLogs) {
-    setConsoleSubsystemFilter(["agent/claude-cli"]);
-    process.env.OPENCLAW_CLAUDE_CLI_LOG_OUTPUT = "1";
+  if (opts.cliBackendLogs || opts.claudeCliLogs) {
+    setConsoleSubsystemFilter(["agent/cli-backend"]);
+    process.env.OPENCLAW_CLI_BACKEND_LOG_OUTPUT = "1";
   }
   const wsLogRaw = (opts.compact ? "compact" : opts.wsLog) as string | undefined;
   const wsLogStyle: GatewayWsLogStyle =
@@ -197,10 +245,21 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
     process.env.OPENCLAW_RAW_STREAM_PATH = rawStreamPath;
   }
 
+  // The heaviest part of gateway startup is loading the server module tree
+  // (channels, plugins, HTTP stack, etc.). Show a spinner so the user sees
+  // progress instead of a silent 15-20 s pause (especially on Windows/NTFS).
+  const { startGatewayServer } = await withProgress(
+    { label: "Loading gateway modules…", indeterminate: true },
+    async () => import("../../gateway/server.js"),
+  );
+
+  setConsoleTimestampPrefix(true);
+
   if (devMode) {
     await ensureDevGatewayConfig({ reset: Boolean(opts.reset) });
   }
 
+  gatewayLog.info("loading configuration…");
   const cfg = loadConfig();
   const portOverride = parsePort(opts.port);
   if (opts.port !== undefined && portOverride === null) {
@@ -314,20 +373,21 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   }
   const tokenRaw = toOptionString(opts.token);
 
+  gatewayLog.info("resolving authentication…");
   const snapshot = await readConfigFileSnapshot().catch(() => null);
   const configExists = snapshot?.exists ?? fs.existsSync(CONFIG_PATH);
   const configAuditPath = path.join(resolveStateDir(process.env), "logs", "config-audit.jsonl");
-  const mode = cfg.gateway?.mode;
-  if (!opts.allowUnconfigured && mode !== "local") {
-    if (!configExists) {
-      defaultRuntime.error(
-        `Missing config. Run \`${formatCliCommand("openclaw setup")}\` or set gateway.mode=local (or pass --allow-unconfigured).`,
-      );
-    } else {
-      defaultRuntime.error(
-        `Gateway start blocked: set gateway.mode=local (current: ${mode ?? "unset"}) or pass --allow-unconfigured.`,
-      );
-      defaultRuntime.error(`Config write audit: ${configAuditPath}`);
+  const effectiveCfg = snapshot?.valid ? snapshot.config : cfg;
+  const mode = effectiveCfg.gateway?.mode;
+  const guardErrors = getGatewayStartGuardErrors({
+    allowUnconfigured: opts.allowUnconfigured,
+    configExists,
+    configAuditPath,
+    mode,
+  });
+  if (guardErrors.length > 0) {
+    for (const error of guardErrors) {
+      defaultRuntime.error(error);
     }
     defaultRuntime.exit(1);
     return;
@@ -421,15 +481,17 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
         }
       : undefined;
 
+  gatewayLog.info("starting...");
   const startLoop = async () =>
     await runGatewayLoop({
       runtime: defaultRuntime,
       lockPort: port,
-      start: async () =>
+      start: async ({ startupStartedAt } = {}) =>
         await startGatewayServer(port, {
           bind,
           auth: authOverride,
           tailscale: tailscaleOverride,
+          startupStartedAt,
         }),
     });
 
@@ -454,10 +516,7 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
       }
     }
   } catch (err) {
-    if (
-      err instanceof GatewayLockError ||
-      (err && typeof err === "object" && (err as { name?: string }).name === "GatewayLockError")
-    ) {
+    if (isGatewayLockError(err)) {
       const errMessage = describeUnknownError(err);
       defaultRuntime.error(
         `Gateway failed to start: ${errMessage}\nIf the gateway is supervised, stop it with: ${formatCliCommand("openclaw gateway stop")}`,
@@ -473,7 +532,7 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
         // ignore diagnostics failures
       }
       await maybeExplainGatewayServiceStop();
-      defaultRuntime.exit(1);
+      defaultRuntime.exit(isHealthyGatewayLockError(err) ? 0 : 1);
       return;
     }
     defaultRuntime.error(`Gateway failed to start: ${String(err)}`);
@@ -506,7 +565,7 @@ export function addGatewayRunCommand(cmd: Command): Command {
     )
     .option(
       "--allow-unconfigured",
-      "Allow gateway start without gateway.mode=local in config",
+      "Allow gateway start without enforcing gateway.mode=local in config (does not repair config)",
       false,
     )
     .option("--dev", "Create a dev config + workspace if missing (no BOOTSTRAP.md)", false)
@@ -518,10 +577,11 @@ export function addGatewayRunCommand(cmd: Command): Command {
     .option("--force", "Kill any existing listener on the target port before starting", false)
     .option("--verbose", "Verbose logging to stdout/stderr", false)
     .option(
-      "--claude-cli-logs",
-      "Only show claude-cli logs in the console (includes stdout/stderr)",
+      "--cli-backend-logs",
+      "Only show CLI backend logs in the console (includes stdout/stderr)",
       false,
     )
+    .option("--claude-cli-logs", "Deprecated alias for --cli-backend-logs", false)
     .option("--ws-log <style>", 'WebSocket log style ("auto"|"full"|"compact")', "auto")
     .option("--compact", 'Alias for "--ws-log compact"', false)
     .option("--raw-stream", "Log raw model stream events to jsonl", false)

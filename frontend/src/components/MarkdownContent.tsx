@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { fileDownloadLinkRenderer, remarkFileLinks } from './FileDownloadPlugin'
 
@@ -34,7 +34,7 @@ function CodeBlock({ className, children }: { className?: string; children: Reac
   )
 }
 
-export default function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
+export default memo(function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
   return (
     <div className={`markdown-body text-sm leading-relaxed ${className}`}>
       <ReactMarkdown
@@ -103,4 +103,4 @@ export default function MarkdownContent({ content, className = '' }: { content: 
       </ReactMarkdown>
     </div>
   )
-}
+})

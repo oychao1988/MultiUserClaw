@@ -6,6 +6,9 @@ import { createChannelsVitestConfig } from "../vitest.channels.config.ts";
 import { createExtensionsVitestConfig } from "../vitest.extensions.config.ts";
 import { createGatewayVitestConfig } from "../vitest.gateway.config.ts";
 import { createScopedVitestConfig, resolveVitestIsolation } from "../vitest.scoped-config.ts";
+import { BUNDLED_PLUGIN_TEST_GLOB, bundledPluginFile } from "./helpers/bundled-plugin-paths.js";
+
+const EXTENSIONS_CHANNEL_GLOB = ["extensions", "channel", "**"].join("/");
 
 describe("resolveVitestIsolation", () => {
   it("defaults shared scoped configs to non-isolated workers", () => {
@@ -24,6 +27,7 @@ describe("createScopedVitestConfig", () => {
     const config = createScopedVitestConfig(["src/example.test.ts"], { env: {} });
     expect(config.test?.isolate).toBe(false);
     expect(config.test?.runner).toBe("./test/non-isolated-runner.ts");
+    expect(config.test?.setupFiles).toEqual(["test/setup.ts", "test/setup-openclaw-runtime.ts"]);
   });
 
   it("passes through a scoped root dir when provided", () => {
@@ -36,14 +40,23 @@ describe("createScopedVitestConfig", () => {
   });
 
   it("relativizes scoped include and exclude patterns to the configured dir", () => {
-    const config = createScopedVitestConfig(["extensions/**/*.test.ts"], {
+    const config = createScopedVitestConfig([BUNDLED_PLUGIN_TEST_GLOB], {
       dir: "extensions",
       env: {},
-      exclude: ["extensions/channel/**", "dist/**"],
+      exclude: [EXTENSIONS_CHANNEL_GLOB, "dist/**"],
     });
 
     expect(config.test?.include).toEqual(["**/*.test.ts"]);
     expect(config.test?.exclude).toEqual(expect.arrayContaining(["channel/**", "dist/**"]));
+  });
+
+  it("overrides setup files when a scoped config requests them", () => {
+    const config = createScopedVitestConfig(["src/example.test.ts"], {
+      env: {},
+      setupFiles: ["test/setup.extensions.ts"],
+    });
+
+    expect(config.test?.setupFiles).toEqual(["test/setup.extensions.ts"]);
   });
 });
 
@@ -54,6 +67,7 @@ describe("scoped vitest configs", () => {
 
   it("defaults channel tests to non-isolated mode", () => {
     expect(defaultChannelsConfig.test?.isolate).toBe(false);
+    expect(defaultChannelsConfig.test?.pool).toBe("forks");
   });
 
   it("loads channel include overrides from OPENCLAW_VITEST_INCLUDE_FILE", () => {
@@ -63,7 +77,10 @@ describe("scoped vitest configs", () => {
       fs.writeFileSync(
         includeFile,
         JSON.stringify([
-          "extensions/discord/src/monitor/message-handler.preflight.acp-bindings.test.ts",
+          bundledPluginFile(
+            "discord",
+            "src/monitor/message-handler.preflight.acp-bindings.test.ts",
+          ),
         ]),
         "utf8",
       );
@@ -73,7 +90,7 @@ describe("scoped vitest configs", () => {
       });
 
       expect(config.test?.include).toEqual([
-        "extensions/discord/src/monitor/message-handler.preflight.acp-bindings.test.ts",
+        bundledPluginFile("discord", "src/monitor/message-handler.preflight.acp-bindings.test.ts"),
       ]);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -82,11 +99,29 @@ describe("scoped vitest configs", () => {
 
   it("defaults extension tests to non-isolated mode", () => {
     expect(defaultExtensionsConfig.test?.isolate).toBe(false);
+    expect(defaultExtensionsConfig.test?.pool).toBe("forks");
   });
 
   it("normalizes extension include patterns relative to the scoped dir", () => {
     expect(defaultExtensionsConfig.test?.dir).toBe("extensions");
     expect(defaultExtensionsConfig.test?.include).toEqual(["**/*.test.ts"]);
+  });
+
+  it("keeps telegram plugin tests in extensions while excluding channel-surface plugin roots", () => {
+    const extensionExcludes = defaultExtensionsConfig.test?.exclude ?? [];
+    expect(
+      extensionExcludes.some((pattern) => path.matchesGlob("telegram/src/fetch.test.ts", pattern)),
+    ).toBe(false);
+    expect(
+      extensionExcludes.some((pattern) =>
+        path.matchesGlob("telegram/src/bot/delivery.resolve-media-retry.test.ts", pattern),
+      ),
+    ).toBe(false);
+    expect(defaultChannelsConfig.test?.include).not.toContain("extensions/telegram/**/*.test.ts");
+    expect(defaultChannelsConfig.test?.exclude).not.toContain(
+      bundledPluginFile("telegram", "src/fetch.test.ts"),
+    );
+    expect(defaultExtensionsConfig.test?.setupFiles).toEqual(["test/setup.extensions.ts"]);
   });
 
   it("normalizes gateway include patterns relative to the scoped dir", () => {

@@ -553,3 +553,13 @@ openclaw/src/auto-reply/commands-registry.ts
 
   验证上，frontend 的 npm run build 已通过，bridge/routes/sessions.ts 也做了模块加载校验。因为这次改了 bridge，你本地用 python start_local.py 的
   话需要重启这一套服务后再试；前端热更新不够，后端等待接口要重启后才会生效。
+
+# SSE和流式
+frontend 实际上有两层机制叠加：
+真流式（SSE）：后端一有数据增量（delta），前端就实时收到并更新内容。
+假打字机效果：页面上“逐字出现”的效果，是前端把已收到的文本用定时器一点点显示出来的，并不是后端按字发送。
+因此可以这样理解：
+数据层面：是真的流式（SSE）
+视觉层面：是前端模拟的打字动画
+本质区别：
+frontend：真 SSE + 打字机动画

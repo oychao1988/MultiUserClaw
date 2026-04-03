@@ -12,7 +12,7 @@
 
 🔔：openclaw_oldfrontend分支是基于openclaw版本的旧版本前端, 🦞 OpenClaw 2026.3.3 (eae1484)
 
-🔔：当前的main分支是的Openclaw的版本：🦞 OpenClaw 2026.3.24
+🔔：当前的main分支是的Openclaw的版本：🦞 OpenClaw 2026.4.3
 
 ---
 
@@ -341,13 +341,25 @@ python deploy_docker.py --rebuild frontend
 # 仅构建镜像不启动
 python deploy_docker.py --build-only
 
-# 完全清理重建,删除部署的数据
+# 仅重启服务
+python deploy_docker.py --restart
+
+# 完全清理重建
 python deploy_docker.py --clean
 
 # === 本地开发模式 ===
 
 # 启动所有本地服务（postgres + bridge + gateway + frontend dev server）
 python start_local.py
+
+# 仅启动部分服务
+python start_local.py --only db,gateway,frontend
+
+# 测试打包openclaw, 或者使用--no-cache，不加缓存
+docker build  -f openclaw/Dockerfile.bridge -t openclaw:latest openclaw/
+
+# 跳过某些服务
+python start_local.py --skip bridge
 
 # 停止所有服务
 python start_local.py --stop
@@ -1068,6 +1080,9 @@ https://zhuanlan.zhihu.com/p/2016049817437111235
 
 2、支持Agent配置备份与分发：管理员统一配置并备份Agent，可下发给普通用户，防止用户误删/改坏技能，确保功能可用。
 现在自带的这个实时终端，好像不太好用，能执行一些简单的命令，能否升级一下。
+
+## 文档
+- 如何配置nginx进行域名设置： doc/openclaw_web.conf
 
 ## 📬 联系方式
 

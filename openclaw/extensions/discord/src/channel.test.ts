@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginRuntime } from "../../../src/plugins/runtime/types.js";
-import { createStartAccountContext } from "../../../test/helpers/extensions/start-account-context.js";
+import type { PluginRuntime } from "openclaw/plugin-sdk/testing";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createStartAccountContext } from "../../../test/helpers/plugins/start-account-context.js";
 import type { ResolvedDiscordAccount } from "./accounts.js";
 import type { OpenClawConfig } from "./runtime-api.js";
 let discordPlugin: typeof import("./channel.js").discordPlugin;
@@ -9,6 +9,15 @@ let setDiscordRuntime: typeof import("./runtime.js").setDiscordRuntime;
 const probeDiscordMock = vi.hoisted(() => vi.fn());
 const monitorDiscordProviderMock = vi.hoisted(() => vi.fn());
 const auditDiscordChannelPermissionsMock = vi.hoisted(() => vi.fn());
+const sleepWithAbortMock = vi.hoisted(() => vi.fn(async () => undefined));
+
+vi.mock("openclaw/plugin-sdk/runtime-env", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/runtime-env")>();
+  return {
+    ...actual,
+    sleepWithAbort: sleepWithAbortMock,
+  };
+});
 
 vi.mock("./probe.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./probe.js")>();
@@ -45,14 +54,14 @@ function createCfg(): OpenClawConfig {
   } as OpenClawConfig;
 }
 
-function resolveAccount(cfg: OpenClawConfig): ResolvedDiscordAccount {
-  return discordPlugin.config.resolveAccount(cfg, "default") as ResolvedDiscordAccount;
+function resolveAccount(cfg: OpenClawConfig, accountId = "default"): ResolvedDiscordAccount {
+  return discordPlugin.config.resolveAccount(cfg, accountId) as ResolvedDiscordAccount;
 }
 
-function startDiscordAccount(cfg: OpenClawConfig) {
+function startDiscordAccount(cfg: OpenClawConfig, accountId = "default") {
   return discordPlugin.gateway!.startAccount!(
     createStartAccountContext({
-      account: resolveAccount(cfg),
+      account: resolveAccount(cfg, accountId),
       cfg,
     }),
   );
@@ -73,11 +82,16 @@ afterEach(() => {
   probeDiscordMock.mockReset();
   monitorDiscordProviderMock.mockReset();
   auditDiscordChannelPermissionsMock.mockReset();
+  sleepWithAbortMock.mockReset();
+  sleepWithAbortMock.mockResolvedValue(undefined);
 });
 
 beforeEach(async () => {
   vi.useRealTimers();
-  vi.resetModules();
+  installDiscordRuntime({});
+});
+
+beforeAll(async () => {
   ({ discordPlugin } = await import("./channel.js"));
   ({ setDiscordRuntime } = await import("./runtime.js"));
 });
@@ -181,8 +195,83 @@ describe("discordPlugin outbound", () => {
         accountId: "default",
       }),
     );
+    expect(sleepWithAbortMock).not.toHaveBeenCalled();
     expect(runtimeProbeDiscord).not.toHaveBeenCalled();
     expect(runtimeMonitorDiscordProvider).not.toHaveBeenCalled();
+  });
+
+  it("stagger starts later accounts in multi-bot setups", async () => {
+    probeDiscordMock.mockResolvedValue({
+      ok: true,
+      bot: { username: "Cherry" },
+      application: {
+        intents: {
+          messageContent: "limited",
+          guildMembers: "disabled",
+          presence: "disabled",
+        },
+      },
+      elapsedMs: 1,
+    });
+    monitorDiscordProviderMock.mockResolvedValue(undefined);
+
+    const cfg = {
+      channels: {
+        discord: {
+          accounts: {
+            // "alpha" sorts before "zeta" so alpha is index 0, zeta is index 1
+            alpha: { token: "Bot alpha-token", enabled: true },
+            zeta: { token: "Bot zeta-token", enabled: true },
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    // First account (index 0) — no delay
+    await startDiscordAccount(cfg, "alpha");
+    expect(sleepWithAbortMock).not.toHaveBeenCalled();
+
+    // Second account (index 1) — 10s delay
+    await startDiscordAccount(cfg, "zeta");
+    expect(sleepWithAbortMock).toHaveBeenCalledWith(10_000, expect.any(Object));
+  });
+});
+
+describe("discordPlugin bindings", () => {
+  it("preserves user-prefixed current conversation ids for DM binds", () => {
+    const result = discordPlugin.bindings?.resolveCommandConversation?.({
+      accountId: "default",
+      originatingTo: "user:123456789012345678",
+    });
+
+    expect(result).toEqual({
+      conversationId: "user:123456789012345678",
+    });
+  });
+
+  it("preserves channel-prefixed current conversation ids for channel binds", () => {
+    const result = discordPlugin.bindings?.resolveCommandConversation?.({
+      accountId: "default",
+      originatingTo: "channel:987654321098765432",
+    });
+
+    expect(result).toEqual({
+      conversationId: "channel:987654321098765432",
+    });
+  });
+
+  it("preserves channel-prefixed parent ids for thread binds", () => {
+    const result = discordPlugin.bindings?.resolveCommandConversation?.({
+      accountId: "default",
+      originatingTo: "channel:thread-42",
+      threadId: "thread-42",
+      threadParentId: "parent-9",
+    });
+
+    expect(result).toEqual({
+      conversationId: "thread-42",
+      parentConversationId: "channel:parent-9",
+    });
   });
 });
 
