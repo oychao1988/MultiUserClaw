@@ -22,6 +22,11 @@ export default function Agents() {
     return name.toLowerCase().includes(term) || (a.id || '').toLowerCase().includes(term)
   })
 
+  const handleStartChat = (agentId: string) => {
+    const sessionKey = `agent:${agentId}:session-${Date.now()}`
+    navigate(`/chat?session=${encodeURIComponent(sessionKey)}`)
+  }
+
   const handleDelete = async (e: React.MouseEvent, agent: BackendAgent) => {
     e.stopPropagation()
     if (confirm('确定删除该 Agent？')) {
@@ -69,7 +74,7 @@ export default function Agents() {
           <div
             key={agent.id}
             className="rounded-xl border border-dark-border bg-dark-card p-5 hover:border-accent-blue/30 transition-colors cursor-pointer"
-            onClick={() => navigate(`/agents/${agent.id}`)}
+            onClick={() => handleStartChat(agent.id)}
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
@@ -88,6 +93,15 @@ export default function Agents() {
             </div>
 
             <div className="mt-4 flex items-center justify-end gap-3">
+              <button
+                onClick={e => {
+                  e.stopPropagation()
+                  navigate(`/agents/${agent.id}`)
+                }}
+                className="text-xs text-dark-text-secondary hover:text-dark-text"
+              >
+                详情
+              </button>
               <button
                 onClick={e => handleDelete(e, agent)}
                 className="text-xs text-accent-red/70 hover:text-accent-red"
