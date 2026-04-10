@@ -153,6 +153,7 @@ export default function ErpnextSettings() {
                 value={erpnextUrl}
                 onChange={e => setUrl(e.target.value)}
                 placeholder="http://localhost:8000"
+                autoComplete="off"
                 className="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 text-sm text-dark-text outline-none focus:border-accent-blue"
               />
               <p className="mt-1 text-[11px] text-dark-text-secondary">
@@ -192,6 +193,7 @@ export default function ErpnextSettings() {
                   value={appId}
                   onChange={e => setAppIdVal(e.target.value)}
                   placeholder="请输入 ERPNext API Key"
+                  autoComplete="off"
                   className="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 text-sm text-dark-text outline-none focus:border-accent-blue"
                 />
               </div>
@@ -206,6 +208,7 @@ export default function ErpnextSettings() {
                     value={appSecret}
                     onChange={e => setAppSecretVal(e.target.value)}
                     placeholder="请输入 ERPNext API Secret"
+                    autoComplete="new-password"
                     className="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 pr-9 text-sm text-dark-text outline-none focus:border-accent-blue"
                   />
                   <button

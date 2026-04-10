@@ -16,6 +16,10 @@ COPY . .
 ARG VITE_API_URL=""
 ENV VITE_API_URL=${VITE_API_URL}
 
+# VITE_ERPNEXT_URL — ERPNext 默认地址，用户可在设置页面覆盖
+ARG VITE_ERPNEXT_URL="http://localhost:8000"
+ENV VITE_ERPNEXT_URL=${VITE_ERPNEXT_URL}
+
 RUN npm run build
 
 # ── Stage 2: Serve with nginx ────────────────────────────────────────

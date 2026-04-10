@@ -1,7 +1,9 @@
 /**
  * SCMClaw ERPNext 前端 API 模块
  *
- * ERPNext URL 通过 .env 配置（全局），App ID/Secret 存储在浏览器 localStorage 中。
+ * ERPNext URL 默认值通过 Vite 构建时环境变量 VITE_ERPNEXT_URL 注入（来自 .env），
+ * 用户可在设置页面中覆盖并保存到 localStorage。
+ * App ID/Secret 存储在浏览器 localStorage 中。
  * 前端直接向 ERPNext 发送请求，后端不参与凭证传递。
  *
  * 安全提示：App Secret 存在浏览器 localStorage 中，建议用户仅在内网环境使用。
@@ -13,11 +15,12 @@ const STORAGE_KEYS = {
   appSecret: 'scmclaw_erpnext_app_secret',
 } as const
 
-// 默认 ERPNext 端口，与 docker-compose.erpnext.yml 中 ${ERPNEXT_PORT:-8000} 保持一致
-const DEFAULT_ERPNEXT_PORT = 8000
+// VITE_ERPNEXT_URL 在构建时注入，可通过 .env 配置
+// 默认值与 docker-compose.erpnext.yml 中 ${ERPNEXT_PORT:-8000} 保持一致
+const DEFAULT_ERPNEXT_URL = import.meta.env.VITE_ERPNEXT_URL || 'http://localhost:8000'
 
 export function getDefaultErpnextUrl(): string {
-  return `http://localhost:${DEFAULT_ERPNEXT_PORT}`
+  return DEFAULT_ERPNEXT_URL
 }
 
 export function getErpnextUrl(): string {
