@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { getMe, listAgents, changePassword, logout } from '../lib/api'
 import type { AuthUser } from '../lib/api'
 import Brand from './Brand'
+import { scmclawNavSections } from '../lib/scmclaw/nav-items'
 import {
   LayoutDashboard,
   Bot,
@@ -60,14 +61,6 @@ const navSections = [
       { to: '/nodes', icon: Monitor, label: 'Node 管理' },
       { to: '/api', icon: Code2, label: 'API设定' },
       { to: '/settings', icon: Settings, label: '系统设置' },
-    ],
-  },
-  // SCMCLAW-MOD: 新增 ERPNext 菜单分组 (2026-04-10)
-  // 上游无此分组，纯 SCMClaw 自有菜单，合并上游时可直接保留
-  {
-    label: 'ERPNext',
-    items: [
-      { to: '/erpnext/settings', icon: Settings, label: 'ERPNext 设置' },
     ],
   },
 ]
@@ -141,7 +134,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-2">
-        {navSections.map(section => (
+        {[...navSections, ...scmclawNavSections].map(section => (
           <div key={section.label} className="mb-4">
             <div className="mb-1.5 px-3 text-xs font-medium uppercase tracking-wider text-dark-text-secondary">
               {section.label}
