@@ -62,6 +62,14 @@ const navSections = [
       { to: '/settings', icon: Settings, label: '系统设置' },
     ],
   },
+  // SCMCLAW-MOD: 新增 ERPNext 菜单分组 (2026-04-10)
+  // 上游无此分组，纯 SCMClaw 自有菜单，合并上游时可直接保留
+  {
+    label: 'ERPNext',
+    items: [
+      { to: '/erpnext/settings', icon: Settings, label: 'ERPNext 设置' },
+    ],
+  },
 ]
 
 export default function Sidebar() {

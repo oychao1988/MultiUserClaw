@@ -18,6 +18,8 @@ import ApiAccess from './pages/ApiAccess'
 import Nodes from './pages/Nodes'
 import Plugins from './pages/Plugins'
 import TerminalPage from './pages/Terminal'
+// SCMCLAW-MOD: 新增 ERPNext 设置页面路由 (2026-04-10)
+import ErpNextSettings from './pages/ErpNextSettings'
 import { isLoggedIn } from './lib/api'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -48,6 +50,8 @@ export default function App() {
         <Route path="nodes" element={<Nodes />} />
         <Route path="api" element={<ApiAccess />} />
         <Route path="settings" element={<SystemSettings />} />
+        {/* SCMCLAW-MOD: 新增 ERPNext 设置路由 (2026-04-10) */}
+        <Route path="erpnext/settings" element={<ErpNextSettings />} />
       </Route>
     </Routes>
   )
