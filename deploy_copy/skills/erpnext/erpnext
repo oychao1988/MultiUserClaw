@@ -1,0 +1,21 @@
+#!/bin/bash
+# ERPNext CLI Wrapper
+# 将此脚本路径添加到 PATH 或创建符号链接到 /usr/local/bin/
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_SCRIPT="${SCRIPT_DIR}/erpnext.py"
+
+# 检查 Python3
+if ! command -v python3 &> /dev/null; then
+    echo "错误: 需要 Python3" >&2
+    exit 1
+fi
+
+# 检查 requests 库
+if ! python3 -c "import requests" 2>/dev/null; then
+    echo "安装 requests 库..."
+    pip3 install requests --quiet
+fi
+
+# 执行 Python 脚本
+exec python3 "$PYTHON_SCRIPT" "$@"

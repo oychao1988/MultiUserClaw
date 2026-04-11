@@ -94,3 +94,43 @@ export async function checkErpnextConnection(): Promise<{
     return { ok: false, message: `连接失败: ${msg}` }
   }
 }
+
+/** 保存凭证到后端（用户容器内 ~/.openclaw/.env.erpnext） */
+export async function saveErpnextCredentialsToBackend(data: {
+  url: string
+  apiKey: string
+  apiSecret: string
+}): Promise<void> {
+  const resp = await fetch('/api/erpnext/credentials', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: data.url,
+      api_key: data.apiKey,
+      api_secret: data.apiSecret,
+    }),
+  })
+  if (!resp.ok) throw new Error('保存凭证失败')
+}
+
+/** 从后端加载凭证（返回原始数据） */
+export async function loadErpnextCredentialsFromBackend(): Promise<{
+  url: string
+  apiKey: string
+  apiSecret: string
+}> {
+  const resp = await fetch('/api/erpnext/credentials')
+  if (!resp.ok) throw new Error('加载凭证失败')
+  const data = await resp.json()
+  return {
+    url: data.url || '',
+    apiKey: data.api_key || '',
+    apiSecret: data.api_secret || '',
+  }
+}
+
+/** 删除后端凭证文件 */
+export async function deleteErpnextCredentialsBackend(): Promise<void> {
+  const resp = await fetch('/api/erpnext/credentials', { method: 'DELETE' })
+  if (!resp.ok) throw new Error('删除凭证失败')
+}

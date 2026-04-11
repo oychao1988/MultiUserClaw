@@ -18,6 +18,7 @@ import { channelsRoutes } from "./routes/channels.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { nodesRoutes } from "./routes/nodes.js";
 import { eventsRoutes } from "./routes/events.js";
+import { erpnextRoutes } from "./routes/erpnext.js";
 import { createTerminalWs } from "./routes/terminal-ws.js";
 
 export interface GatewayRestartable {
@@ -58,6 +59,7 @@ export function createServer(client: BridgeGatewayClient, config: BridgeConfig, 
   app.use("/api", settingsRoutes(config, manager));
   app.use("/api", nodesRoutes(liveClient));
   app.use("/api", eventsRoutes(liveClient));
+  app.use("/api", erpnextRoutes());
 
   // Error handler
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

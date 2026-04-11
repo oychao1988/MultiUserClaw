@@ -18,8 +18,12 @@ import {
   setAppId,
   getAppSecret,
   setAppSecret,
+  clearErpnextCredentials,
   checkErpnextConnection,
   maskSecret,
+  saveErpnextCredentialsToBackend,
+  loadErpnextCredentialsFromBackend,
+  deleteErpnextCredentialsBackend,
 } from '../../lib/scmclaw/erpnext'
 
 export default function ErpnextSettings() {
@@ -36,15 +40,40 @@ export default function ErpnextSettings() {
   const [message, setMessage] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
-  const load = () => {
+  const load = async () => {
     setLoading(true)
-    setUrl(getErpnextUrl())
-    setAppIdVal(getAppId())
-    setAppSecretVal(getAppSecret())
-    setSavedAppId(getAppId())
-    setSavedAppSecret(getAppSecret())
+    setUrl('')
+    setAppIdVal('')
+    setAppSecretVal('')
+    setSavedAppId('')
+    setSavedAppSecret('')
     setConnected(null)
     setMessage('')
+
+    try {
+      const backend = await loadErpnextCredentialsFromBackend()
+      if (backend.url || backend.apiKey) {
+        setUrl(backend.url || getErpnextUrl())
+        setAppIdVal(backend.apiKey)
+        setAppSecretVal(backend.apiSecret)
+        setSavedAppId(backend.apiKey)
+        setSavedAppSecret(backend.apiSecret)
+      } else {
+        // 降级到 localStorage（兼容旧数据）
+        setUrl(getErpnextUrl())
+        setAppIdVal(getAppId())
+        setAppSecretVal(getAppSecret())
+        setSavedAppId(getAppId())
+        setSavedAppSecret(getAppSecret())
+      }
+    } catch {
+      // 后端无数据时降级到 localStorage
+      setUrl(getErpnextUrl())
+      setAppIdVal(getAppId())
+      setAppSecretVal(getAppSecret())
+      setSavedAppId(getAppId())
+      setSavedAppSecret(getAppSecret())
+    }
     setLoading(false)
   }
 
@@ -55,15 +84,30 @@ export default function ErpnextSettings() {
     setTimeout(() => setSuccessMsg(''), 3000)
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true)
     setMessage('')
-    setErpnextUrl(erpnextUrl.trim())
-    setAppId(appId.trim())
+
+    const trimmedUrl = erpnextUrl.trim()
+    const trimmedAppId = appId.trim()
+
+    // 保留 localStorage（前端连接测试用）
+    setErpnextUrl(trimmedUrl)
+    setAppId(trimmedAppId)
     setAppSecret(appSecret)
-    setSavedAppId(appId.trim())
-    setSavedAppSecret(appSecret)
-    flash('设置已保存')
+
+    try {
+      await saveErpnextCredentialsToBackend({
+        url: trimmedUrl,
+        apiKey: trimmedAppId,
+        apiSecret: appSecret,
+      })
+      setSavedAppId(trimmedAppId)
+      setSavedAppSecret(appSecret)
+      flash('设置已保存')
+    } catch {
+      setMessage('保存到后端失败，仅本地保存')
+    }
     setSaving(false)
   }
 
@@ -82,11 +126,17 @@ export default function ErpnextSettings() {
     setChecking(false)
   }
 
-  const handleClearCredentials = () => {
+  const handleClearCredentials = async () => {
     setAppIdVal('')
     setAppSecretVal('')
+    setSavedAppId('')
+    setSavedAppSecret('')
     setConnected(null)
     setMessage('')
+    clearErpnextCredentials()
+    try {
+      await deleteErpnextCredentialsBackend()
+    } catch { /* ignore */ }
   }
 
   if (loading) {

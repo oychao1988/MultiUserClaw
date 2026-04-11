@@ -13,7 +13,7 @@ from app.config import settings
 from app.db.engine import engine
 from app.db.models import Base
 from app.logging_setup import setup_logging, log_settings_summary
-from app.routes import auth, llm, proxy, admin
+from app.routes import auth, llm, proxy, admin, erpnext
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -160,6 +160,7 @@ app.include_router(auth.router)
 app.include_router(llm.router)
 app.include_router(proxy.router)
 app.include_router(admin.router)
+app.include_router(erpnext.router)
 
 
 @app.get("/api/ping")
