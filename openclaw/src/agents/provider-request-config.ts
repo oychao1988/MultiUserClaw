@@ -6,6 +6,7 @@ import type {
 } from "../config/types.provider-request.js";
 import { assertSecretInputResolved } from "../config/types.secrets.js";
 import type { PinnedDispatcherPolicy } from "../infra/net/ssrf.js";
+import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 import type {
   ProviderRequestCapabilities,
   ProviderRequestCapability,
@@ -59,6 +60,10 @@ export type ProviderRequestTransportOverrides = {
   auth?: ProviderRequestAuthOverride;
   proxy?: ProviderRequestProxyOverride;
   tls?: ProviderRequestTlsOverride;
+};
+
+export type ModelProviderRequestTransportOverrides = ProviderRequestTransportOverrides & {
+  allowPrivateNetwork?: boolean;
 };
 
 export type ResolvedProviderRequestAuthConfig =
@@ -160,7 +165,7 @@ type ResolveProviderRequestPolicyConfigParams = {
   } | null;
   modelId?: string | null;
   allowPrivateNetwork?: boolean;
-  request?: ProviderRequestTransportOverrides;
+  request?: ModelProviderRequestTransportOverrides;
 };
 
 function sanitizeConfiguredRequestString(value: unknown, path: string): string | undefined {
@@ -175,7 +180,7 @@ function sanitizeConfiguredRequestString(value: unknown, path: string): string |
 }
 
 export function sanitizeConfiguredProviderRequest(
-  request: ConfiguredProviderRequest | ProviderRequestTransportOverrides | undefined,
+  request: ConfiguredProviderRequest | undefined,
 ): ProviderRequestTransportOverrides | undefined {
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     return undefined;
@@ -300,22 +305,18 @@ export function sanitizeConfiguredProviderRequest(
   };
 }
 
-const MODEL_PROVIDER_REQUEST_TRANSPORT_MESSAGE =
-  "models.providers.*.request only supports headers and auth overrides; proxy and TLS transport settings are not wired for model-provider requests";
-
 export function sanitizeConfiguredModelProviderRequest(
-  request: ConfiguredModelProviderRequest | ConfiguredProviderRequest | undefined,
-): ProviderRequestTransportOverrides | undefined {
+  request: ConfiguredModelProviderRequest | undefined,
+): ModelProviderRequestTransportOverrides | undefined {
   const sanitized = sanitizeConfiguredProviderRequest(request);
-  if (!sanitized) {
+  const rawAllow = request?.allowPrivateNetwork;
+  const allowPrivateNetwork = rawAllow === true ? true : rawAllow === false ? false : undefined;
+  if (!sanitized && allowPrivateNetwork === undefined) {
     return undefined;
   }
-  if (sanitized.proxy || sanitized.tls) {
-    throw new Error(MODEL_PROVIDER_REQUEST_TRANSPORT_MESSAGE);
-  }
   return {
-    ...(sanitized.headers ? { headers: sanitized.headers } : {}),
-    ...(sanitized.auth ? { auth: sanitized.auth } : {}),
+    ...sanitized,
+    ...(allowPrivateNetwork !== undefined ? { allowPrivateNetwork } : {}),
   };
 }
 
@@ -341,6 +342,23 @@ export function mergeProviderRequestOverrides(
       ...(current.proxy ? { proxy: current.proxy } : {}),
       ...(current.tls ? { tls: current.tls } : {}),
     };
+  }
+  return merged;
+}
+
+export function mergeModelProviderRequestOverrides(
+  ...overrides: Array<ModelProviderRequestTransportOverrides | undefined>
+): ModelProviderRequestTransportOverrides | undefined {
+  let merged: ModelProviderRequestTransportOverrides | undefined = mergeProviderRequestOverrides(
+    ...overrides,
+  );
+  for (const current of overrides) {
+    if (current?.allowPrivateNetwork !== undefined) {
+      merged = {
+        ...merged,
+        allowPrivateNetwork: current.allowPrivateNetwork,
+      };
+    }
   }
   return merged;
 }
@@ -374,7 +392,7 @@ export function mergeProviderRequestHeaders(
       merged = Object.create(null) as Record<string, string>;
     }
     for (const [key, value] of Object.entries(headers)) {
-      const normalizedKey = key.toLowerCase();
+      const normalizedKey = normalizeLowercaseStringOrEmpty(key);
       if (FORBIDDEN_HEADER_KEYS.has(normalizedKey)) {
         continue;
       }
@@ -512,12 +530,12 @@ function applyResolvedAuthHeader(
     return headers;
   }
   const next = mergeProviderRequestHeaders(headers) ?? Object.create(null);
-  const keysToDelete = new Set([auth.headerName.toLowerCase()]);
+  const keysToDelete = new Set([normalizeLowercaseStringOrEmpty(auth.headerName)]);
   if (auth.mode === "header") {
     keysToDelete.add("authorization");
   }
   for (const key of Object.keys(next)) {
-    if (keysToDelete.has(key.toLowerCase())) {
+    if (keysToDelete.has(normalizeLowercaseStringOrEmpty(key))) {
       delete next[key];
     }
   }
@@ -617,12 +635,12 @@ export function resolveProviderRequestPolicyConfig(
     auth,
   );
   const protectedAttributionKeys = new Set(
-    Object.keys(policy.attributionHeaders ?? {}).map((key) => key.toLowerCase()),
+    Object.keys(policy.attributionHeaders ?? {}).map((key) => normalizeLowercaseStringOrEmpty(key)),
   );
   const unprotectedCallerHeaders = params.callerHeaders
     ? Object.fromEntries(
         Object.entries(params.callerHeaders).filter(
-          ([key]) => !protectedAttributionKeys.has(key.toLowerCase()),
+          ([key]) => !protectedAttributionKeys.has(normalizeLowercaseStringOrEmpty(key)),
         ),
       )
     : undefined;
@@ -645,7 +663,7 @@ export function resolveProviderRequestPolicyConfig(
     tls: resolveTlsOverride(params.request?.tls),
     policy,
     capabilities,
-    allowPrivateNetwork: params.allowPrivateNetwork ?? Boolean(params.baseUrl?.trim()),
+    allowPrivateNetwork: params.allowPrivateNetwork ?? false,
   };
 }
 
@@ -699,4 +717,30 @@ export function resolveProviderRequestHeaders(params: {
     precedence: params.precedence,
     request: params.request,
   }).headers;
+}
+
+const MODEL_PROVIDER_REQUEST_TRANSPORT_SYMBOL = Symbol.for(
+  "openclaw.modelProviderRequestTransport",
+);
+
+type ModelWithProviderRequestTransport = {
+  [MODEL_PROVIDER_REQUEST_TRANSPORT_SYMBOL]?: ModelProviderRequestTransportOverrides;
+};
+
+export function attachModelProviderRequestTransport<TModel extends object>(
+  model: TModel,
+  request: ModelProviderRequestTransportOverrides | undefined,
+): TModel {
+  if (!request) {
+    return model;
+  }
+  const next = { ...model } as TModel & ModelWithProviderRequestTransport;
+  next[MODEL_PROVIDER_REQUEST_TRANSPORT_SYMBOL] = request;
+  return next;
+}
+
+export function getModelProviderRequestTransport(
+  model: object,
+): ModelProviderRequestTransportOverrides | undefined {
+  return (model as ModelWithProviderRequestTransport)[MODEL_PROVIDER_REQUEST_TRANSPORT_SYMBOL];
 }

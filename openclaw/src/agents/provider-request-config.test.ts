@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { ConfiguredProviderRequest } from "../config/types.provider-request.js";
+import type { SecretRef } from "../config/types.secrets.js";
 import {
   buildProviderRequestDispatcherPolicy,
+  mergeModelProviderRequestOverrides,
   mergeProviderRequestOverrides,
   resolveProviderRequestPolicyConfig,
   resolveProviderRequestConfig,
@@ -294,24 +297,39 @@ describe("provider request config", () => {
   });
 
   it("fails fast when configured request overrides still contain unresolved SecretRefs", () => {
+    const tenantRef: SecretRef = {
+      source: "env",
+      provider: "default",
+      id: "MEDIA_AUDIO_TENANT",
+    };
+    const tokenRef: SecretRef = {
+      source: "env",
+      provider: "default",
+      id: "MEDIA_AUDIO_TOKEN",
+    };
+    const certRef: SecretRef = {
+      source: "env",
+      provider: "default",
+      id: "MEDIA_AUDIO_CERT",
+    };
     expect(() =>
       sanitizeConfiguredProviderRequest({
         headers: {
-          "X-Tenant": { source: "env", provider: "default", id: "MEDIA_AUDIO_TENANT" },
+          "X-Tenant": tenantRef,
         },
         auth: {
           mode: "authorization-bearer",
-          token: { source: "env", provider: "default", id: "MEDIA_AUDIO_TOKEN" },
+          token: tokenRef,
         },
         tls: {
-          cert: { source: "env", provider: "default", id: "MEDIA_AUDIO_CERT" },
+          cert: certRef,
         },
       }),
     ).toThrow(/request\.(headers\.X-Tenant|auth\.token|tls\.cert): unresolved SecretRef/i);
   });
 
-  it("rejects model-provider transport overrides that the llm path cannot carry", () => {
-    expect(() =>
+  it("keeps model-provider transport overrides once the llm path can carry them", () => {
+    expect(
       sanitizeConfiguredModelProviderRequest({
         headers: {
           "X-Tenant": "acme",
@@ -321,7 +339,44 @@ describe("provider request config", () => {
           url: "http://proxy.internal:8443",
         },
       }),
-    ).toThrow(/models\.providers\.\*\.request only supports headers and auth overrides/i);
+    ).toEqual({
+      headers: {
+        "X-Tenant": "acme",
+      },
+      proxy: {
+        mode: "explicit-proxy",
+        url: "http://proxy.internal:8443",
+      },
+    });
+  });
+
+  it("preserves request.allowPrivateNetwork for operator-trusted LAN/overlay model bases", () => {
+    expect(sanitizeConfiguredModelProviderRequest({ allowPrivateNetwork: true })).toEqual({
+      allowPrivateNetwork: true,
+    });
+    expect(sanitizeConfiguredModelProviderRequest({ allowPrivateNetwork: false })).toEqual({
+      allowPrivateNetwork: false,
+    });
+    expect(
+      sanitizeConfiguredProviderRequest({
+        allowPrivateNetwork: true,
+      } as ConfiguredProviderRequest),
+    ).toBeUndefined();
+  });
+
+  it("merges allowPrivateNetwork with later override winning", () => {
+    expect(
+      mergeModelProviderRequestOverrides(
+        { allowPrivateNetwork: true },
+        { allowPrivateNetwork: false },
+      ),
+    ).toEqual({ allowPrivateNetwork: false });
+    expect(
+      mergeModelProviderRequestOverrides(
+        { allowPrivateNetwork: false },
+        { allowPrivateNetwork: true },
+      ),
+    ).toEqual({ allowPrivateNetwork: true });
   });
 
   it("merges configured request overrides with later entries winning", () => {
@@ -467,7 +522,7 @@ describe("provider request config", () => {
     });
 
     expect(resolved.baseUrl).toBe("https://api.openai.com/v1");
-    expect(resolved.allowPrivateNetwork).toBe(true);
+    expect(resolved.allowPrivateNetwork).toBe(false);
     expect(resolved.policy.endpointClass).toBe("openai-public");
     expect(resolved.capabilities.allowsResponsesStore).toBe(true);
     expect(resolved.headers).toMatchObject({

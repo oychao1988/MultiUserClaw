@@ -2,15 +2,15 @@ import { analyzeBootstrapBudget } from "../../agents/bootstrap-budget.js";
 import {
   resolveBootstrapMaxChars,
   resolveBootstrapTotalMaxChars,
-} from "../../agents/pi-embedded-helpers.js";
+} from "../../agents/pi-embedded-helpers/bootstrap.js";
 import { buildSystemPromptReport } from "../../agents/system-prompt-report.js";
 import {
   resolveFreshSessionTotalTokens,
   type SessionSystemPromptReport,
 } from "../../config/sessions/types.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import { estimateTokensFromChars } from "../../utils/cjk-chars.js";
 import type { ReplyPayload } from "../types.js";
-import { resolveCommandsSystemPromptBundle } from "./commands-system-prompt.js";
 import type { HandleCommandsParams } from "./commands-types.js";
 
 function formatInt(n: number): string {
@@ -52,6 +52,7 @@ async function resolveContextReport(
 
   const bootstrapMaxChars = resolveBootstrapMaxChars(params.cfg);
   const bootstrapTotalMaxChars = resolveBootstrapTotalMaxChars(params.cfg);
+  const { resolveCommandsSystemPromptBundle } = await import("./commands-system-prompt.js");
   const { systemPrompt, tools, skillsPrompt, bootstrapFiles, injectedFiles, sandboxRuntime } =
     await resolveCommandsSystemPromptBundle(params);
 
@@ -76,7 +77,7 @@ async function resolveContextReport(
 
 export async function buildContextReply(params: HandleCommandsParams): Promise<ReplyPayload> {
   const args = parseContextArgs(params.command.commandBodyNormalized);
-  const sub = args.split(/\s+/).filter(Boolean)[0]?.toLowerCase() ?? "";
+  const sub = normalizeLowercaseStringOrEmpty(args.split(/\s+/).filter(Boolean)[0]);
 
   if (!sub || sub === "help") {
     return {

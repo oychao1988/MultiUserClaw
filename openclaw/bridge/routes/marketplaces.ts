@@ -172,6 +172,100 @@ function getCachePath(name: string): string {
   return path.join(getMarketplacesDir(), "cache", name);
 }
 
+// -----------------------------------------------------------------------
+// Recommended skills marketplace (Gitee repo with categories)
+// -----------------------------------------------------------------------
+
+interface CategoryMeta {
+  id: string;
+  name: string;
+  name_en: string;
+  icon: string;
+  description: string;
+  order: number;
+  path?: string;
+}
+
+interface RecommendedSkill {
+  name: string;
+  description: string;
+  category: string;
+}
+
+interface RecommendedCategory extends CategoryMeta {
+  skills: RecommendedSkill[];
+}
+
+function getRecommendedCacheDir(): string {
+  return path.join(getMarketplacesDir(), "recommended-cache");
+}
+
+function cloneOrPullRecommended(repoUrl: string): string {
+  const cacheDir = getRecommendedCacheDir();
+  const repoDir = path.join(cacheDir, "infoxmed_skills_marketplace");
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  if (fs.existsSync(path.join(repoDir, ".git"))) {
+    try {
+      execSync("git pull --rebase", { cwd: repoDir, stdio: "pipe", timeout: 30000 });
+    } catch {
+      // Re-clone on failure
+      fs.rmSync(repoDir, { recursive: true, force: true });
+      execSync(`git clone --depth 1 -b aph_skills "${repoUrl}" "${repoDir}"`, { stdio: "pipe", timeout: 60000 });
+    }
+  } else {
+    if (fs.existsSync(repoDir)) fs.rmSync(repoDir, { recursive: true, force: true });
+    execSync(`git clone --depth 1 -b aph_skills "${repoUrl}" "${repoDir}"`, { stdio: "pipe", timeout: 60000 });
+  }
+  return repoDir;
+}
+
+function loadRecommendedSkills(repoDir: string): RecommendedCategory[] {
+  const skillsDir = path.join(repoDir, "skills");
+  const catFile = path.join(skillsDir, "categories.json");
+  if (!fs.existsSync(catFile)) return [];
+
+  let catData: { categories: CategoryMeta[] };
+  try {
+    catData = JSON.parse(fs.readFileSync(catFile, "utf-8"));
+  } catch {
+    return [];
+  }
+
+  const results: RecommendedCategory[] = [];
+
+  for (const cat of catData.categories) {
+    // Skip "existing" category (built-in skills from claude-plugins)
+    if (cat.id === "existing") continue;
+
+    const catDir = path.join(skillsDir, cat.path || cat.id);
+    if (!fs.existsSync(catDir)) continue;
+
+    const skills: RecommendedSkill[] = [];
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(catDir, { withFileTypes: true });
+    } catch { continue; }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const skillMd = path.join(catDir, entry.name, "SKILL.md");
+      if (!fs.existsSync(skillMd)) continue;
+
+      const content = fs.readFileSync(skillMd, "utf-8");
+      const desc = parseSkillMdDescription(content);
+      skills.push({ name: entry.name, description: desc, category: cat.id });
+    }
+
+    if (skills.length > 0) {
+      results.push({ ...cat, skills });
+    }
+  }
+
+  results.sort((a, b) => a.order - b.order);
+  return results;
+}
+
 export function marketplacesRoutes(_config: BridgeConfig): Router {
   const router = Router();
 
@@ -469,6 +563,55 @@ export function marketplacesRoutes(_config: BridgeConfig): Router {
     }
 
     res.json({ ok: true, installed: installedSkills, errors });
+  }));
+
+  // -----------------------------------------------------------------------
+  // Recommended skills (from Gitee marketplace repo)
+  // -----------------------------------------------------------------------
+
+  // GET /api/marketplaces/recommended — list categorized recommended skills
+  router.get("/marketplaces/recommended", asyncHandler(async (_req, res) => {
+    try {
+      const repoDir = cloneOrPullRecommended(_config.skillsMarketplaceRepo);
+      const categories = loadRecommendedSkills(repoDir);
+      res.json({ categories });
+    } catch (err) {
+      res.status(500).json({ detail: `Failed to load recommended skills: ${(err as Error).message}` });
+    }
+  }));
+
+  // POST /api/marketplaces/recommended/install — install a recommended skill by category and name
+  router.post("/marketplaces/recommended/install", asyncHandler(async (req, res) => {
+    const { category, skillName } = req.body;
+    if (!category || !skillName) {
+      res.status(400).json({ detail: "category and skillName are required" });
+      return;
+    }
+
+    const safeCat = String(category).replace(/[^a-zA-Z0-9_\-]/g, "");
+    const safeName = String(skillName).replace(/[^a-zA-Z0-9_\-]/g, "");
+
+    const repoDir = cloneOrPullRecommended(_config.skillsMarketplaceRepo);
+    const sourcePath = path.join(repoDir, "skills", safeCat, safeName);
+
+    if (!fs.existsSync(sourcePath) || !fs.existsSync(path.join(sourcePath, "SKILL.md"))) {
+      res.status(404).json({ detail: `Skill "${safeName}" not found in category "${safeCat}"` });
+      return;
+    }
+
+    const globalSkillsDir = path.join(os.homedir(), ".openclaw", "skills");
+    fs.mkdirSync(globalSkillsDir, { recursive: true });
+    const destDir = path.join(globalSkillsDir, safeName);
+
+    try {
+      if (fs.existsSync(destDir)) {
+        fs.rmSync(destDir, { recursive: true });
+      }
+      fs.cpSync(sourcePath, destDir, { recursive: true });
+      res.json({ ok: true, name: safeName, path: destDir });
+    } catch (err) {
+      res.status(500).json({ detail: `Failed to install: ${(err as Error).message}` });
+    }
   }));
 
   // -----------------------------------------------------------------------

@@ -47,7 +47,9 @@ export function sessionsRoutes(client: BridgeGatewayClient): Router {
       });
 
       const sessions = (result.sessions || []).map((s: OpenclawSessionRow) => {
-        const rawTitle = String(s.displayName || s.derivedTitle || "");
+        // Skip generic origin labels (e.g. "OpenClaw Bridge") — prefer derivedTitle (user's first message)
+        const dn = s.displayName && s.displayName !== "OpenClaw Bridge" ? s.displayName : "";
+        const rawTitle = String(dn || s.derivedTitle || "");
         const cleaned = cleanSessionTitle(rawTitle);
         // If title was all metadata (cleaned to empty), try lastMessagePreview as fallback
         const lastPreview = typeof s.lastMessagePreview === "string"

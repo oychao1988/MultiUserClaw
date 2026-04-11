@@ -1,7 +1,7 @@
 import type { OpenClawPluginCommandDefinition } from "openclaw/plugin-sdk/core";
 import { describe, expect, it, vi } from "vitest";
+import type { PluginRuntime } from "./api.js";
 import register from "./index.js";
-import type { PluginRuntime } from "./runtime-api.js";
 
 function createHarness(config: Record<string, unknown>) {
   let command: OpenClawPluginCommandDefinition | undefined;
@@ -20,7 +20,7 @@ function createHarness(config: Record<string, unknown>) {
       command = definition;
     }),
   };
-  register.register(api as never);
+  void register.register(api as never);
   if (!command) {
     throw new Error("talk-voice command not registered");
   }
@@ -84,7 +84,7 @@ describe("talk-voice plugin", () => {
       text:
         "Talk voice status:\n" +
         "- provider: microsoft\n" +
-        "- talk.voiceId: en-US-AvaNeural\n" +
+        "- talk.providers.microsoft.voiceId: en-US-AvaNeural\n" +
         "- microsoft.apiKey: secret…",
     });
   });

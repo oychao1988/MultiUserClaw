@@ -1,6 +1,16 @@
 import { listPotentialConfiguredChannelIds } from "../channels/config-presence.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { normalizePluginsConfig, resolveEffectivePluginActivationState } from "./config-state.js";
+import {
+  resolveMemoryDreamingConfig,
+  resolveMemoryDreamingPluginConfig,
+  resolveMemoryDreamingPluginId,
+} from "../memory-host-sdk/dreaming.js";
+import {
+  createPluginActivationSource,
+  normalizePluginId,
+  normalizePluginsConfig,
+  resolveEffectivePluginActivationState,
+} from "./config-state.js";
 import { loadPluginManifestRegistry, type PluginManifestRecord } from "./manifest-registry.js";
 import { hasKind } from "./slots.js";
 
@@ -11,14 +21,57 @@ function hasRuntimeContractSurface(plugin: PluginManifestRecord): boolean {
     plugin.contracts?.speechProviders?.length ||
     plugin.contracts?.mediaUnderstandingProviders?.length ||
     plugin.contracts?.imageGenerationProviders?.length ||
+    plugin.contracts?.videoGenerationProviders?.length ||
+    plugin.contracts?.musicGenerationProviders?.length ||
     plugin.contracts?.webFetchProviders?.length ||
     plugin.contracts?.webSearchProviders?.length ||
+    plugin.contracts?.memoryEmbeddingProviders?.length ||
     hasKind(plugin.kind, "memory"),
   );
 }
 
+function isGatewayStartupMemoryPlugin(plugin: PluginManifestRecord): boolean {
+  return hasKind(plugin.kind, "memory");
+}
+
 function isGatewayStartupSidecar(plugin: PluginManifestRecord): boolean {
   return plugin.channels.length === 0 && !hasRuntimeContractSurface(plugin);
+}
+
+function resolveGatewayStartupDreamingPluginIds(config: OpenClawConfig): Set<string> {
+  const dreamingConfig = resolveMemoryDreamingConfig({
+    pluginConfig: resolveMemoryDreamingPluginConfig(config),
+    cfg: config,
+  });
+  if (!dreamingConfig.enabled) {
+    return new Set();
+  }
+  return new Set(["memory-core", resolveMemoryDreamingPluginId(config)]);
+}
+
+function resolveExplicitMemorySlotStartupPluginId(config: OpenClawConfig): string | undefined {
+  const configuredSlot = config.plugins?.slots?.memory?.trim();
+  if (!configuredSlot || configuredSlot.toLowerCase() === "none") {
+    return undefined;
+  }
+  return normalizePluginId(configuredSlot);
+}
+
+function shouldConsiderForGatewayStartup(params: {
+  plugin: PluginManifestRecord;
+  startupDreamingPluginIds: ReadonlySet<string>;
+  explicitMemorySlotStartupPluginId?: string;
+}): boolean {
+  if (isGatewayStartupSidecar(params.plugin)) {
+    return true;
+  }
+  if (!isGatewayStartupMemoryPlugin(params.plugin)) {
+    return false;
+  }
+  if (params.startupDreamingPluginIds.has(params.plugin.id)) {
+    return true;
+  }
+  return params.explicitMemorySlotStartupPluginId === params.plugin.id;
 }
 
 export function resolveChannelPluginIds(params: {
@@ -75,6 +128,7 @@ export function resolveConfiguredDeferredChannelPluginIds(params: {
 
 export function resolveGatewayStartupPluginIds(params: {
   config: OpenClawConfig;
+  activationSourceConfig?: OpenClawConfig;
   workspaceDir?: string;
   env: NodeJS.ProcessEnv;
 }): string[] {
@@ -82,6 +136,16 @@ export function resolveGatewayStartupPluginIds(params: {
     listPotentialConfiguredChannelIds(params.config, params.env).map((id) => id.trim()),
   );
   const pluginsConfig = normalizePluginsConfig(params.config.plugins);
+  // Startup must classify allowlist exceptions against the raw config snapshot,
+  // not the auto-enabled effective snapshot, or configured-only channels can be
+  // misclassified as explicit enablement.
+  const activationSource = createPluginActivationSource({
+    config: params.activationSourceConfig ?? params.config,
+  });
+  const startupDreamingPluginIds = resolveGatewayStartupDreamingPluginIds(params.config);
+  const explicitMemorySlotStartupPluginId = resolveExplicitMemorySlotStartupPluginId(
+    params.activationSourceConfig ?? params.config,
+  );
   return loadPluginManifestRegistry({
     config: params.config,
     workspaceDir: params.workspaceDir,
@@ -91,7 +155,13 @@ export function resolveGatewayStartupPluginIds(params: {
       if (plugin.channels.some((channelId) => configuredChannelIds.has(channelId))) {
         return true;
       }
-      if (!isGatewayStartupSidecar(plugin)) {
+      if (
+        !shouldConsiderForGatewayStartup({
+          plugin,
+          startupDreamingPluginIds,
+          explicitMemorySlotStartupPluginId,
+        })
+      ) {
         return false;
       }
       const activationState = resolveEffectivePluginActivationState({
@@ -100,6 +170,7 @@ export function resolveGatewayStartupPluginIds(params: {
         config: pluginsConfig,
         rootConfig: params.config,
         enabledByDefault: plugin.enabledByDefault,
+        activationSource,
       });
       if (!activationState.enabled) {
         return false;

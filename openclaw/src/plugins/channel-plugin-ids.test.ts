@@ -58,6 +58,24 @@ function createManifestRegistryFixture() {
         cliBackends: [],
       },
       {
+        id: "memory-core",
+        kind: "memory",
+        channels: [],
+        origin: "bundled",
+        enabledByDefault: undefined,
+        providers: [],
+        cliBackends: [],
+      },
+      {
+        id: "memory-lancedb",
+        kind: "memory",
+        channels: [],
+        origin: "bundled",
+        enabledByDefault: undefined,
+        providers: [],
+        cliBackends: [],
+      },
+      {
         id: "demo-global-sidecar",
         channels: [],
         origin: "global",
@@ -70,22 +88,30 @@ function createManifestRegistryFixture() {
   };
 }
 
-function expectStartupPluginIds(config: OpenClawConfig, expected: readonly string[]) {
+function expectStartupPluginIds(params: {
+  config: OpenClawConfig;
+  activationSourceConfig?: OpenClawConfig;
+  expected: readonly string[];
+}) {
   expect(
     resolveGatewayStartupPluginIds({
-      config,
+      config: params.config,
+      ...(params.activationSourceConfig !== undefined
+        ? { activationSourceConfig: params.activationSourceConfig }
+        : {}),
       workspaceDir: "/tmp",
       env: process.env,
     }),
-  ).toEqual(expected);
+  ).toEqual(params.expected);
   expect(loadPluginManifestRegistry).toHaveBeenCalled();
 }
 
 function expectStartupPluginIdsCase(params: {
   config: OpenClawConfig;
+  activationSourceConfig?: OpenClawConfig;
   expected: readonly string[];
 }) {
-  expectStartupPluginIds(params.config, params.expected);
+  expectStartupPluginIds(params);
 }
 
 function createStartupConfig(params: {
@@ -95,6 +121,7 @@ function createStartupConfig(params: {
   channelIds?: string[];
   allowPluginIds?: string[];
   noConfiguredChannels?: boolean;
+  memorySlot?: string;
 }) {
   return {
     ...(params.noConfiguredChannels
@@ -112,6 +139,7 @@ function createStartupConfig(params: {
       ? {
           plugins: {
             ...(params.allowPluginIds?.length ? { allow: params.allowPluginIds } : {}),
+            ...(params.memorySlot ? { slots: { memory: params.memorySlot } } : {}),
             entries: Object.fromEntries(
               params.enabledPluginIds.map((pluginId) => [pluginId, { enabled: true }]),
             ),
@@ -123,7 +151,15 @@ function createStartupConfig(params: {
               allow: params.allowPluginIds,
             },
           }
-        : {}),
+        : params.memorySlot
+          ? {
+              plugins: {
+                slots: {
+                  memory: params.memorySlot,
+                },
+              },
+            }
+          : {}),
     ...(params.providerIds?.length
       ? {
           models: {
@@ -210,5 +246,60 @@ describe("resolveGatewayStartupPluginIds", () => {
     ],
   ] as const)("%s", (_name, config, expected) => {
     expectStartupPluginIdsCase({ config, expected });
+  });
+
+  it("keeps effective-only bundled sidecars behind restrictive allowlists", () => {
+    const rawConfig = createStartupConfig({
+      allowPluginIds: ["browser"],
+    });
+    const effectiveConfig = {
+      ...rawConfig,
+      plugins: {
+        allow: ["browser"],
+        entries: {
+          "voice-call": {
+            enabled: true,
+          },
+          "memory-core": {
+            enabled: true,
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    expectStartupPluginIdsCase({
+      config: effectiveConfig,
+      activationSourceConfig: rawConfig,
+      expected: ["demo-channel", "browser"],
+    });
+  });
+
+  it("includes the explicitly selected memory slot plugin in startup scope", () => {
+    expectStartupPluginIdsCase({
+      config: createStartupConfig({
+        enabledPluginIds: ["memory-lancedb"],
+        memorySlot: "memory-lancedb",
+      }),
+      expected: ["demo-channel", "browser", "memory-lancedb"],
+    });
+  });
+
+  it("normalizes the raw memory slot id before startup filtering", () => {
+    expectStartupPluginIdsCase({
+      config: createStartupConfig({
+        enabledPluginIds: ["memory-core"],
+        memorySlot: "Memory-Core",
+      }),
+      expected: ["demo-channel", "browser", "memory-core"],
+    });
+  });
+
+  it("does not include non-selected memory plugins only because they are enabled", () => {
+    expectStartupPluginIdsCase({
+      config: createStartupConfig({
+        enabledPluginIds: ["memory-lancedb"],
+      }),
+      expected: ["demo-channel", "browser"],
+    });
   });
 });
