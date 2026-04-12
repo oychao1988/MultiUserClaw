@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     default_model: str = "claude-sonnet-4-5"
 
     # Docker
-    openclaw_image: str = "openclaw-bridge:2026.4.10"
+    openclaw_image: str = "openclaw-user:2026.4.12.1"
     container_network: str = "openclaw-internal"
     user_container_publish_ports: bool = True
     user_container_bind_ip: str = "0.0.0.0"
