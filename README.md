@@ -561,7 +561,7 @@ python start_local.py --stop
 
 ```bash
 # 1. 构建 openclaw 基础镜像（包含 openclaw + bridge）
-docker build -f openclaw/Dockerfile.bridge -t openclaw:latest openclaw/
+docker build -f openclaw/Dockerfile.bridge -t openclaw-bridge:2026.4.10 openclaw/
 
 # 2. 构建并启动所有服务
 docker compose up -d --build

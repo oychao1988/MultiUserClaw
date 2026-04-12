@@ -42,7 +42,7 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 所有需要导出的镜像
 COMPOSE_IMAGES = ["openclaw-gateway", "openclaw-frontend", "openclaw-manage"]
-BASE_IMAGES = ["openclaw:latest"]
+BASE_IMAGES = ["openclaw-bridge:2026.4.10"]
 EXTERNAL_IMAGES = ["postgres:16-alpine"]
 
 ALL_IMAGES = COMPOSE_IMAGES + BASE_IMAGES + EXTERNAL_IMAGES
@@ -134,7 +134,7 @@ def cmd_pack(args):
     # 并行构建 openclaw 基础镜像 + compose 服务
     log("并行构建所有镜像...")
     tasks = {
-        "openclaw:latest": "docker build --no-cache -f openclaw/Dockerfile.bridge -t openclaw:latest openclaw/",
+        "openclaw-bridge:2026.4.10": "docker build --no-cache -f openclaw/Dockerfile.bridge -t openclaw-bridge:2026.4.10 openclaw/",
         "compose services": f"docker compose {compose_args} build --parallel",
     }
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(tasks)) as pool:
