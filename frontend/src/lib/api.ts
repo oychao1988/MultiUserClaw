@@ -77,11 +77,21 @@ export interface SessionDetail {
   updated_at: string | null
 }
 
+export interface SkillVersion {
+  version: string
+  installedAt: string
+  isActive: boolean
+}
+
 export interface Skill {
   name: string
   description: string
   source?: string
   disabled?: boolean
+  version?: string
+  versions?: SkillVersion[]
+  installedAt?: string
+  updatedAt?: string
 }
 
 export interface SlashCommandInfo {
