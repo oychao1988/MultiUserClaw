@@ -207,16 +207,15 @@ async def sso_login(req: SsoLoginRequest, db: AsyncSession = Depends(get_db)):
         if len(parts) != 2:
             raise ValueError("Invalid token format")
         payload_b64, signature = parts
-        # Add padding if needed
+        # Add padding only for decoding, keep original for HMAC verification
         padding = 4 - len(payload_b64) % 4
-        if padding != 4:
-            payload_b64 += "=" * padding
-        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        payload_b64_padded = payload_b64 + ("=" * padding if padding != 4 else "")
+        payload_bytes = base64.urlsafe_b64decode(payload_b64_padded)
         payload = json.loads(payload_bytes)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid SSO token format")
 
-    # Verify HMAC-SHA256 signature
+    # Verify HMAC-SHA256 signature (use original payload_b64 without padding)
     expected_sig = hmac.new(
         settings.sso_shared_secret.encode(),
         payload_b64.encode(),
