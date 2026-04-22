@@ -31,6 +31,8 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")  # user | admin
     quota_tier: Mapped[str] = mapped_column(String(16), nullable=False, default="free")  # free | basic | pro
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sso_uid: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True, index=True)
+    sso_token: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
