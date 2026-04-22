@@ -73,7 +73,20 @@ def resolve_erpnext_url(url: str) -> str:
 
 
 def get_credentials() -> dict:
-    """从 Gateway API 获取 ERPNext 凭证"""
+    """Get ERPNext credentials. Priority: environment variables > Gateway API."""
+    # 1. Try environment variables first (user-level credentials in container)
+    env_url = os.environ.get("ERPNEXT_URL", "")
+    env_key = os.environ.get("ERPNEXT_API_KEY", "")
+    env_secret = os.environ.get("ERPNEXT_API_SECRET", "")
+
+    if env_url and env_key:
+        return {
+            "url": env_url,
+            "api_key": env_key,
+            "api_secret": env_secret,
+        }
+
+    # 2. Fallback to Gateway API (legacy/global credentials)
     try:
         resp = requests.get(f"{GATEWAY_URL}/api/erpnext/credentials", timeout=10)
         resp.raise_for_status()

@@ -257,10 +257,29 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
     except DockerNotFound:
         pass
 
-    # Fetch user's SSO token if available (e.g. InfoX-Med)
-    # user_result = await db.execute(select(User).where(User.id == user_id))
-    # user_row = user_result.scalar_one_or_none()
-    # sso_token = user_row.sso_token if user_row else None
+    # Read per-user ERPNext credentials
+    erpnext_env_file = Path(settings.container_data_dir) / f".env.erpnext.{user_id}"
+    erpnext_url = ""
+    erpnext_api_key = ""
+    erpnext_api_secret = ""
+
+    if erpnext_env_file.exists():
+        try:
+            for line in erpnext_env_file.read_text(encoding="utf-8").split("\n"):
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                if key == "ERPNEXT_URL":
+                    erpnext_url = value
+                elif key == "ERPNEXT_API_KEY":
+                    erpnext_api_key = value
+                elif key == "ERPNEXT_API_SECRET":
+                    erpnext_api_secret = value
+        except Exception:
+            pass  # Non-fatal: container will work without ERPNext credentials
 
     container_env = {
         "NANOBOT_PROXY__URL": f"http://gateway:8080/llm/v1",
@@ -269,8 +288,13 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
         "TZ": settings.container_tz,
         "BRIDGE_ENABLE_CHANNELS": "1",
     }
-    # if sso_token:
-    #     container_env["SSO_TOKEN"] = sso_token
+
+    if erpnext_url:
+        container_env["ERPNEXT_URL"] = erpnext_url
+    if erpnext_api_key:
+        container_env["ERPNEXT_API_KEY"] = erpnext_api_key
+    if erpnext_api_secret:
+        container_env["ERPNEXT_API_SECRET"] = erpnext_api_secret
 
     run_kwargs = {
         "image": settings.openclaw_image,

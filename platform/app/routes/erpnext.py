@@ -1,11 +1,14 @@
-"""ERPNext credentials management routes."""
+"""ERPNext credentials management routes (per-user)."""
 
 import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from app.auth.dependencies import get_current_user
+from app.db.models import User
 
 router = APIRouter(prefix="/api/erpnext", tags=["erpnext"])
 
@@ -16,23 +19,16 @@ class ErpnextCredentials(BaseModel):
     api_secret: Optional[str] = None
 
 
-def get_openclaw_home() -> Path:
-    """Get the OpenClaw home directory."""
-    return Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw"))
-
-
-def get_env_file() -> Path:
-    """Get the ERPNext credentials file path.
-
-    使用 /data/openclaw-users/.env.erpnext，与 userdata 卷挂载一致。
-    """
-    return Path("/data/openclaw-users/.env.erpnext")
+def get_env_file(user_id: str) -> Path:
+    """Get the per-user ERPNext credentials file path."""
+    data_dir = Path(os.environ.get("PLATFORM_CONTAINER_DATA_DIR", "/data/openclaw-users"))
+    return data_dir / f".env.erpnext.{user_id}"
 
 
 @router.get("/credentials")
-async def get_credentials() -> ErpnextCredentials:
-    """Read current credentials from ~/.openclaw/.env.erpnext"""
-    env_file = get_env_file()
+async def get_credentials(user: User = Depends(get_current_user)) -> ErpnextCredentials:
+    """Read current user's ERPNext credentials."""
+    env_file = get_env_file(user.id)
 
     if not env_file.exists():
         return ErpnextCredentials()
@@ -44,14 +40,11 @@ async def get_credentials() -> ErpnextCredentials:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-
         if "=" not in line:
             continue
-
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip()
-
         if key == "ERPNEXT_URL":
             result["url"] = value
         elif key == "ERPNEXT_API_KEY":
@@ -63,16 +56,15 @@ async def get_credentials() -> ErpnextCredentials:
 
 
 @router.put("/credentials")
-async def save_credentials(credentials: ErpnextCredentials) -> dict:
-    """Save credentials to ~/.openclaw/.env.erpnext"""
-    openclaw_home = get_openclaw_home()
-    env_file = get_env_file()
+async def save_credentials(
+    credentials: ErpnextCredentials,
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Save current user's ERPNext credentials."""
+    env_file = get_env_file(user.id)
+    env_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Ensure directory exists
-    openclaw_home.mkdir(parents=True, exist_ok=True)
-
-    lines = ["# SCMClaw ERPNext Credentials (auto-generated, do not edit manually)"]
-
+    lines = ["# SCMClaw ERPNext Credentials (per-user, auto-generated)"]
     if credentials.url:
         lines.append(f"ERPNEXT_URL={credentials.url}")
     if credentials.api_key:
@@ -81,16 +73,13 @@ async def save_credentials(credentials: ErpnextCredentials) -> dict:
         lines.append(f"ERPNEXT_API_SECRET={credentials.api_secret}")
 
     env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
     return {"ok": True}
 
 
 @router.delete("/credentials")
-async def delete_credentials() -> dict:
-    """Delete ~/.openclaw/.env.erpnext"""
-    env_file = get_env_file()
-
+async def delete_credentials(user: User = Depends(get_current_user)) -> dict:
+    """Delete current user's ERPNext credentials."""
+    env_file = get_env_file(user.id)
     if env_file.exists():
         env_file.unlink()
-
     return {"ok": True}

@@ -11,6 +11,7 @@ from app.auth.service import (
     create_api_token,
     create_refresh_token,
     create_user,
+    create_or_update_sso_user,
     decode_token,
     get_user_by_email,
     get_user_by_id,
@@ -179,3 +180,75 @@ async def change_password(
     user.password_hash = hash_password(req.new_password)
     await db.commit()
     return {"message": "密码修改成功"}
+
+
+import base64
+import hashlib
+import hmac
+import json
+import time
+
+from app.config import settings
+
+
+class SsoLoginRequest(BaseModel):
+    token: str  # HMAC-SHA256 signed SSO token from ERPNext
+
+
+@router.post("/sso", response_model=TokenResponse)
+async def sso_login(req: SsoLoginRequest, db: AsyncSession = Depends(get_db)):
+    """Verify SSO token from ERPNext and create/update user session."""
+    if not settings.sso_shared_secret:
+        raise HTTPException(status_code=500, detail="SSO not configured")
+
+    # Decode the SSO token: base64url(payload).signature
+    try:
+        parts = req.token.split(".")
+        if len(parts) != 2:
+            raise ValueError("Invalid token format")
+        payload_b64, signature = parts
+        # Add padding if needed
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        payload = json.loads(payload_bytes)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid SSO token format")
+
+    # Verify HMAC-SHA256 signature
+    expected_sig = hmac.new(
+        settings.sso_shared_secret.encode(),
+        payload_b64.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected_sig):
+        raise HTTPException(status_code=401, detail="Invalid SSO token signature")
+
+    # Check expiry
+    if payload.get("exp", 0) < time.time():
+        raise HTTPException(status_code=401, detail="SSO token expired")
+
+    # Extract user info
+    sso_uid = payload.get("platform_user_id", "")
+    erpnext_user_id = payload.get("erpnext_user_id", "")
+    email = payload.get("email", "")
+
+    if not sso_uid:
+        raise HTTPException(status_code=401, detail="Missing platform_user_id in SSO token")
+
+    # Create or update SSO user — sso_token stores erpnext_user_id for container injection
+    user = await create_or_update_sso_user(
+        db=db,
+        sso_uid=sso_uid,
+        sso_token=erpnext_user_id,
+        display_name=email.split("@")[0] if email else "",
+    )
+
+    return TokenResponse(
+        access_token=create_access_token(user.id, user.role),
+        refresh_token=create_refresh_token(user.id),
+        user_id=user.id,
+        username=user.username,
+        role=user.role,
+    )

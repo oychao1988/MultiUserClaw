@@ -26,15 +26,20 @@ erpnext list "Sales Order" --filters '{"status":"Open"}'
 
 ## Credential Management
 
-凭证存储在 Gateway 容器中，通过 API 获取：
+凭证优先从容器环境变量获取（用户级），回退到 Gateway API（全局共享）：
 
 ```bash
-# 获取当前凭证状态
+# 容器内自动注入（推荐方式）:
+# ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET
+
+# 查看当前凭证状态
 erpnext credentials
 
 # 测试连接
 erpnext ping
 ```
+
+**凭证优先级**: 容器环境变量 > Gateway API
 
 **网络要求**: ERPNext 服务必须与 User 容器网络互通，或使用外部可访问地址。
 
