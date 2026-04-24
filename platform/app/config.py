@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # SSO
     sso_shared_secret: str = ""  # Shared secret for HMAC-SHA256 SSO token verification
 
+    # Admin token for server-to-server API calls (e.g., ERPNext pushing credentials)
+    admin_api_token: str = ""
+
     # Local dev: set to e.g. "http://127.0.0.1:18080" to skip Docker containers
     dev_openclaw_url: str = ""
 
